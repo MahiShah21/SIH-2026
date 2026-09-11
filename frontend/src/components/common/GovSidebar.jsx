@@ -36,7 +36,7 @@ export default function GovSidebar({ activeNav = 'overview', isMobileOpen: propM
     {
       id: 'ai-review',
       label: t('admin_portal', 'AI Review & Triage'),
-      path: '/admin/ai-review',
+      path: '/government/dashboard',
       badge: 'Queue',
       icon: (
         <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

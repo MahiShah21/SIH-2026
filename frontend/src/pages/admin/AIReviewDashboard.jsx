@@ -5,9 +5,12 @@ import problemApi from '../../api/problemApi';
 import ProblemDetailModal from '../../components/common/ProblemDetailModal';
 import { Eye, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ShieldCheck, Zap } from 'lucide-react';
 import LanguageSwitcher from '../../components/common/LanguageSwitcher';
+import { getSocket } from '../../api/socket';
+import { useAuth } from '../../context/AuthContext';
 
 export default function AIReviewDashboard() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [searchParams] = useSearchParams();
   const paramId = searchParams.get('id');
 
@@ -205,25 +208,39 @@ export default function AIReviewDashboard() {
             <LanguageSwitcher />
             <button
               onClick={loadProblems}
-              className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition shadow-xs"
+              className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition shadow-xs cursor-pointer"
               title="Refresh Review Queue"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => setShowStepper(true)}
-              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <span>View Governance Stepper</span>
+              <span>Governance Stepper</span>
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
               </svg>
             </button>
+            {/* Officer Badge */}
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200">
+              <div className="w-8 h-8 rounded-full bg-emerald-800 text-emerald-100 flex items-center justify-center font-bold text-xs shadow-xs border border-emerald-700">
+                {((currentUser?.name || 'Gov Officer').split(' ').map(n=>n[0]).join('').substring(0,2) || 'GO').toUpperCase()}
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold text-slate-900 leading-tight">
+                  {currentUser?.name || 'Dr. Sunita Murmu, IAS'}
+                </span>
+                <span className="text-[10px] text-emerald-700 font-semibold leading-tight">
+                  {currentUser?.department || currentUser?.organization_or_district || 'State Innovation Directorate'}
+                </span>
+              </div>
+            </div>
             <button
               onClick={() => navigate('/login')}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg transition-colors"
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg transition-colors cursor-pointer"
             >
-              Switch Role
+              Log Out
             </button>
           </div>
         </header>

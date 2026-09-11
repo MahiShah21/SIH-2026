@@ -94,8 +94,13 @@ export default function App() {
             <Route path="/industry/impact" element={<IndustryImpact />} />
             <Route path="/industry/profile" element={<IndustryProfile />} />
 
-            {/* 5. Government Admin AI Review Route */}
-            <Route path="/admin" element={<Navigate to="/admin/ai-review" replace />} />
+            {/* 5. Government & Admin AI Review Routes */}
+            <Route path="/government" element={<Navigate to="/government/dashboard" replace />} />
+            <Route path="/government/dashboard" element={<AIReviewDashboard />} />
+            <Route path="/government/ai-review" element={<AIReviewDashboard />} />
+            <Route path="/government/triage" element={<Navigate to="/government/dashboard" replace />} />
+            <Route path="/admin" element={<Navigate to="/government/dashboard" replace />} />
+            <Route path="/admin/dashboard" element={<Navigate to="/government/dashboard" replace />} />
             <Route path="/admin/ai-review" element={<AIReviewDashboard />} />
 
             {/* 6. Public Dashboards & Shared Intelligence Views */}
