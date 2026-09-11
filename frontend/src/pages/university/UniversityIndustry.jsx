@@ -4,11 +4,16 @@ import UniversityHeader from '../../components/common/UniversityHeader';
 import industryApi from '../../api/industryApi';
 import collaborationApi from '../../api/collaborationApi';
 import projectApi from '../../api/projectApi';
+import authApi from '../../api/authApi';
+import { useAuth } from '../../context/AuthContext';
 
 export default function UniversityIndustry() {
+  const { currentUser } = useAuth();
   const [currentView, setCurrentView] = useState('directory'); // 'directory' | 'details' | 'request'
   const [partners, setPartners] = useState([]);
+  const [industryUsers, setIndustryUsers] = useState([]);
   const [selectedPartner, setSelectedPartner] = useState(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [availableProjects, setAvailableProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDomain, setFilterDomain] = useState('All');
@@ -20,38 +25,80 @@ export default function UniversityIndustry() {
   const [newContactPerson, setNewContactPerson] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newSector, setNewSector] = useState('IoT & Hardware');
-  const [newLocation, setNewLocation] = useState('Ranchi, Jharkhand');
-  const [newCommittedAmount, setNewCommittedAmount] = useState('₹3,00,000');
+  const [newLocation, setNewLocation] = useState('Jharkhand');
+  const [newCommittedAmount, setNewCommittedAmount] = useState('');
   const [newAbout, setNewAbout] = useState('');
 
   // Request form state
   const [selectedProject, setSelectedProject] = useState('');
   const [pitchMessage, setPitchMessage] = useState('');
+  const [customGrantAmount, setCustomGrantAmount] = useState('');
   const [requestStatus, setRequestStatus] = useState('New');
 
-  const fetchLivePartners = () => {
-    industryApi.getIndustryPartners()
-      .then(res => {
-        if (res && res.success && Array.isArray(res.partners)) {
-          const normalized = res.partners.map(p => ({
-            ...p,
-            name: p.company_name || p.name,
-            tech: p.tech_stack || p.tech || ['IoT', 'Cloud Telemetry'],
-            support: p.support_types || p.support || ['Funding', 'Mentorship'],
-            grantPool: p.grant_pool || p.grantPool || '₹5,00,000 Fund',
-            contact: p.contact || `${p.contact_person || 'CSR Lead'} · ${p.email}`,
-            matchScore: p.matchScore || '90% AI Match',
-            matchedProject: p.matchedProject || 'Active University R&D'
-          }));
-          setPartners(normalized);
-          if (!selectedPartner && normalized.length > 0) {
-            setSelectedPartner(normalized[0]);
+  const fetchLivePartners = async () => {
+    try {
+      const [partnerRes, userRes] = await Promise.all([
+        industryApi.getIndustryPartners().catch(() => ({ partners: [] })),
+        authApi.getUsers({ role: 'industry' }).catch(() => ({ users: [] }))
+      ]);
+
+      const mergedList = [];
+      const seenIds = new Set();
+
+      // 1. Registered Industry Users
+      if (userRes?.users && Array.isArray(userRes.users)) {
+        userRes.users.forEach(u => {
+          seenIds.add(u.id);
+          mergedList.push({
+            id: u.id,
+            user_id: u.id,
+            name: u.organization_or_district || u.name,
+            company_name: u.organization_or_district || u.name,
+            contact_person: u.name,
+            email: u.email,
+            phone: u.phone,
+            sector: u.title || 'Industry CSR Partner',
+            partner_type: 'CSR & Innovation Partner',
+            location: u.organization_or_district || 'Jharkhand',
+            tech: ['Applied Engineering', 'Field Pilots'],
+            support: ['Funding', 'Mentorship', 'Testing Rig'],
+            grantPool: 'Available for Allocation',
+            committed_amount: '',
+            mou_status: 'Active Stakeholder',
+            about: `Registered Industry Partner on JanSetu (${u.id}).`
+          });
+        });
+        setIndustryUsers(userRes.users);
+      }
+
+      // 2. Industry Database Table Partners
+      if (partnerRes?.partners && Array.isArray(partnerRes.partners)) {
+        partnerRes.partners.forEach(p => {
+          if (!seenIds.has(p.id) && !seenIds.has(p.user_id)) {
+            mergedList.push({
+              ...p,
+              name: p.company_name || p.name,
+              tech: p.tech_stack || p.tech || ['IoT', 'Cloud Telemetry'],
+              support: p.support_types || p.support || ['Funding', 'Mentorship'],
+              grantPool: p.grant_pool || p.grantPool || 'CSR Fund',
+              contact: p.contact || `${p.contact_person || 'CSR Lead'} · ${p.email}`,
+              matchScore: p.matchScore || 'AI Verified',
+              matchedProject: p.matchedProject || 'Active R&D'
+            });
           }
+        });
+      }
+
+      setPartners(mergedList);
+      if (mergedList.length > 0) {
+        if (!selectedPartner) {
+          setSelectedPartner(mergedList[0]);
+          setSelectedPartnerId(mergedList[0].id);
         }
-      })
-      .catch(err => {
-        console.warn('Live industry partners load notice:', err);
-      });
+      }
+    } catch (err) {
+      console.warn('Live industry partners load notice:', err);
+    }
   };
 
   useEffect(() => {
@@ -73,49 +120,68 @@ export default function UniversityIndustry() {
 
   const handlePartnerSelect = (partner) => {
     setSelectedPartner(partner);
+    setSelectedPartnerId(partner.id);
     setCurrentView('details');
   };
 
   const handleOpenCollabRequest = (partner) => {
-    setSelectedPartner(partner);
+    const target = partner || (partners.find(p => p.id === selectedPartnerId) || partners[0]);
+    setSelectedPartner(target);
+    if (target) setSelectedPartnerId(target.id);
     setCurrentView('request');
     setRequestStatus('New');
+    setCustomGrantAmount('');
+    setPitchMessage('');
+  };
+
+  const handlePartnerDropdownChange = (partnerId) => {
+    setSelectedPartnerId(partnerId);
+    const found = partners.find(p => p.id === partnerId);
+    if (found) setSelectedPartner(found);
   };
 
   const handleSendRequest = async (e) => {
     e.preventDefault();
+    if (!selectedPartner) {
+      showToast('Please select an industry partner.');
+      return;
+    }
+
     setRequestStatus('Pending Review');
+    const projCode = selectedProject ? selectedProject.split('·')[0].trim() : 'General R&D';
+    const company = selectedPartner.company_name || selectedPartner.name || 'Industry Partner';
+
     try {
-      const projCode = selectedProject.split('·')[0].trim() || 'PRJ-315';
-      const company = selectedPartner.name || selectedPartner.company_name || 'Industry Partner';
       await collaborationApi.createCollaboration({
         project_id: projCode,
         company_name: company,
-        partner_type: selectedPartner.partner_type || 'CSR Innovation Co-Funder',
-        committed_amount: selectedPartner.committed_amount || '₹2,50,000',
-        details: pitchMessage || 'University research collaboration proposal.',
+        partner_type: selectedPartner.partner_type || 'CSR & Innovation Partner',
+        committed_amount: customGrantAmount.trim() || selectedPartner.committed_amount || '',
+        details: pitchMessage.trim() || `University research collaboration request dispatched to ${company} (${selectedPartner.id}).`,
         mou_status: 'Pending Review',
         status: 'PENDING',
         initiated_by: 'university'
       });
-      showToast(`Collaboration Request sent to ${company}! Automatic alert dispatched.`);
+      showToast(`Collaboration Request sent to ${company} (${selectedPartner.id})! Channel created.`);
     } catch (err) {
       console.warn('Collaboration API note:', err);
-      showToast(`Collaboration Request sent to ${selectedPartner.name || selectedPartner.company_name}!`);
+      showToast(`Collaboration Request sent to ${company}!`);
     }
   };
 
   const handleSimulateAccept = async () => {
+    if (!selectedPartner) return;
     setRequestStatus('Accepted');
+    const projCode = selectedProject ? selectedProject.split('·')[0].trim() : 'General R&D';
+    const company = selectedPartner.company_name || selectedPartner.name || 'Industry Partner';
+
     try {
-      const projCode = selectedProject.split('·')[0].trim() || 'PRJ-315';
-      const company = selectedPartner.name || selectedPartner.company_name || 'Industry Partner';
       await collaborationApi.createCollaboration({
         project_id: projCode,
         company_name: company,
         partner_type: 'Active CSR Partner',
-        committed_amount: selectedPartner.committed_amount || '₹2,50,000',
-        details: 'MoU finalized and matching CSR funds committed.',
+        committed_amount: customGrantAmount.trim() || selectedPartner.committed_amount || '',
+        details: pitchMessage.trim() || 'MoU finalized and matching CSR partnership confirmed.',
         mou_status: 'Active MOU',
         status: 'ACTIVE',
         initiated_by: 'industry'
@@ -123,7 +189,7 @@ export default function UniversityIndustry() {
     } catch (err) {
       console.warn('Simulate accept notice:', err);
     }
-    showToast(`🎉 ${selectedPartner.name || selectedPartner.company_name} accepted your collaboration proposal!`);
+    showToast(`🎉 ${company} accepted your collaboration proposal!`);
   };
 
   // Add new Industry Partner to DB
@@ -383,7 +449,7 @@ export default function UniversityIndustry() {
           )}
 
           {/* ================= 3. COLLABORATION REQUEST VIEW ================= */}
-          {currentView === 'request' && selectedPartner && (
+          {currentView === 'request' && (
             <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-6 max-w-2xl mx-auto animate-in fade-in">
               <button
                 onClick={() => setCurrentView('directory')}
@@ -393,7 +459,7 @@ export default function UniversityIndustry() {
               </button>
 
               <div>
-                <h2 className="text-xl font-bold text-slate-900">Send Collaboration Request to {selectedPartner.name || selectedPartner.company_name}</h2>
+                <h2 className="text-xl font-bold text-slate-900">Send Collaboration Request</h2>
                 <p className="text-xs text-slate-500 mt-1">Submit proposal details for co-funding, hardware rig testing, and technical mentorship.</p>
               </div>
 
@@ -401,7 +467,7 @@ export default function UniversityIndustry() {
                 <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-200 text-center space-y-3">
                   <div className="text-3xl">🎉</div>
                   <h3 className="text-base font-bold text-emerald-900">Collaboration Proposal Accepted!</h3>
-                  <p className="text-xs text-emerald-800">TechNova has signed off on co-developing sensor telemetry for PRJ-315.</p>
+                  <p className="text-xs text-emerald-800">{selectedPartner?.name || 'Industry Partner'} has signed off on the collaboration proposal.</p>
                   <button
                     onClick={() => setCurrentView('directory')}
                     className="px-4 py-2 bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
@@ -412,17 +478,52 @@ export default function UniversityIndustry() {
               ) : (
                 <form onSubmit={handleSendRequest} className="space-y-4 text-xs">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Target Accepted University Project</label>
+                    <label className="block font-bold text-slate-700 mb-1">Target Industry Partner (User ID / Company)</label>
+                    <select
+                      value={selectedPartnerId}
+                      onChange={(e) => handlePartnerDropdownChange(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-700 cursor-pointer"
+                    >
+                      {partners.length === 0 ? (
+                        <option value="">No industry partners registered yet</option>
+                      ) : (
+                        partners.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.id} · {p.name || p.company_name} ({p.sector || p.partner_type || 'Industry Partner'})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Target University Project</label>
                     <select
                       value={selectedProject}
                       onChange={(e) => setSelectedProject(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-teal-700"
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-teal-700 cursor-pointer"
                     >
-                      <option value="PRJ-315 · Smart Waste Management">PRJ-315 · Smart Waste Management</option>
-                      <option value="PRJ-925 · Smart Irrigation Monitoring System">PRJ-925 · Smart Irrigation Monitoring System</option>
-                      <option value="PRJ-051 · AI Crop Disease Detection">PRJ-051 · AI Crop Disease Detection</option>
-                      <option value="PRJ-038 · Rural Solar Monitoring & Telemetry">PRJ-038 · Rural Solar Monitoring &amp; Telemetry</option>
+                      {availableProjects.length === 0 ? (
+                        <option value="General · University R&D Initiative">General · University R&D Initiative</option>
+                      ) : (
+                        availableProjects.map(p => (
+                          <option key={p.id} value={`${p.id} · ${p.title}`}>
+                            {p.id} · {p.title}
+                          </option>
+                        ))
+                      )}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Grant / CSR Co-Funding (Optional)</label>
+                    <input
+                      type="text"
+                      value={customGrantAmount}
+                      onChange={(e) => setCustomGrantAmount(e.target.value)}
+                      placeholder="e.g. ₹2,50,000 (or leave blank)"
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-teal-700"
+                    />
                   </div>
 
                   <div>
@@ -431,7 +532,7 @@ export default function UniversityIndustry() {
                       rows="4"
                       value={pitchMessage}
                       onChange={(e) => setPitchMessage(e.target.value)}
-                      placeholder="Describe the hardware prototype requirements, testing site assistance, or matching CSR co-funding needs..."
+                      placeholder="Describe your research objectives, requested technical support, or testing requirements..."
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-teal-700 resize-none"
                     ></textarea>
                   </div>

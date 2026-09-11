@@ -7,12 +7,14 @@ import projectApi from '../../api/projectApi';
 import { getSocket } from '../../api/socket';
 import ProblemDetailModal from '../../components/common/ProblemDetailModal';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../context/AuthContext';
 
 /**
  * Screen: University Challenges — JharInnovate
  * Direct implementation of Stitch Screen: 20_cad0b74218394116b30e22a85911b9f7
  */
 export default function UniversityChallenges() {
+  const { user: currentUser } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [searchParams] = useSearchParams();
@@ -87,15 +89,18 @@ export default function UniversityChallenges() {
   const handleAcceptChallenge = async (item) => {
     try {
       const projectId = `PRJ-${item.id.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`;
+      const leadInst = currentUser?.organization_or_district || 'State University Lab';
+      const leadFac = currentUser?.name || currentUser?.email || 'University Faculty Lead';
+
       const newProjectData = {
         id: projectId,
         title: item.title,
         challenge_id: item.id,
         problem_id: item.id,
-        lead_institution: 'BIT Mesra, Ranchi',
-        lead_faculty: 'Dr. A. K. Sharma',
-        lead_mentor_dept: 'Dept of Computer Science & AI',
-        lab_location: 'IoT & Civic Innovation Lab',
+        lead_institution: leadInst,
+        lead_faculty: leadFac,
+        lead_mentor_dept: 'R&D Innovation Cell',
+        lab_location: `${leadInst} Research Lab`,
         department: item.domainLabel || 'Civic Infrastructure',
         domain: item.domainLabel || 'Civic Infrastructure',
         location: item.location || 'Jharkhand',
@@ -105,10 +110,10 @@ export default function UniversityChallenges() {
         next_stage: 'Prototype',
         phase: 'Solution Formulation Phase',
         progress_percent: 15,
-        total_budget: '₹5,00,000',
-        disbursed_amount: '₹1,50,000',
-        sanctioned_grant: '₹5,00,000',
-        industry_partner: 'TechNova Solutions / CSR Pool',
+        total_budget: item.raw?.budget || 'State R&D Pool',
+        disbursed_amount: '₹0',
+        sanctioned_grant: item.raw?.budget || 'Pending Tranche',
+        industry_partner: 'Open for Industry Co-funding',
         is_accepted_by_university: true
       };
 

@@ -44,16 +44,18 @@ export async function getConversations(req, res, next) {
 export async function createConversation(req, res, next) {
   try {
     const {
-      project_id = 'PRJ-315',
-      title = 'Project Communication Channel',
-      participant_university = 'Dr. A. K. Sharma (BIT Mesra)',
-      participant_industry = 'TechNova Systems Team'
+      project_id = 'General',
+      title,
+      participant_university = 'University Lead',
+      participant_industry = 'Industry Partner'
     } = req.body;
+
+    const dynamicTitle = title || `${participant_industry} · ${project_id}`;
 
     const newConv = {
       id: `conv-${Date.now()}`,
       project_id,
-      title,
+      title: dynamicTitle,
       participant_university,
       participant_industry,
       last_message: 'Conversation started.',
@@ -120,7 +122,7 @@ export async function sendMessage(req, res, next) {
     const { id: conversationId } = req.params;
     const {
       sender_role = 'university',
-      sender_name = 'Dr. A. K. Sharma (BIT Mesra)',
+      sender_name = 'Stakeholder',
       recipient_role = 'industry',
       text = ''
     } = req.body;
@@ -133,7 +135,7 @@ export async function sendMessage(req, res, next) {
       id: `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       conversation_id: conversationId,
       sender_role,
-      sender_name,
+      sender_name: req.user?.name || sender_name,
       recipient_role,
       text: text.trim(),
       is_read: false,

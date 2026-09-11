@@ -51,11 +51,11 @@ export async function getCollaborations(req, res, next) {
 export async function createCollaboration(req, res, next) {
   try {
     const {
-      project_id = 'PRJ-315',
-      company_name = 'TechNova Systems',
-      partner_type = 'CSR & Hardware Partner',
-      committed_amount = '₹2,50,000',
-      details = 'Collaborative R&D for hardware prototyping and telemetry validation.',
+      project_id = 'Direct Collab',
+      company_name = 'Industry Partner',
+      partner_type = 'R&D Innovation Partner',
+      committed_amount = '',
+      details = 'Collaborative R&D proposal.',
       mou_status = 'Pending Review',
       status = 'PENDING',
       initiated_by = 'university' // 'university' or 'industry'
@@ -63,13 +63,13 @@ export async function createCollaboration(req, res, next) {
 
     const newCollab = {
       id: `collab-${Date.now()}`,
-      project_id,
-      company_name,
-      partner_type,
-      committed_amount,
-      details,
-      mou_status,
-      status,
+      project_id: project_id || 'Direct Collab',
+      company_name: company_name || 'Industry Partner',
+      partner_type: partner_type || 'CSR & Innovation Partner',
+      committed_amount: committed_amount || '',
+      details: details || 'Collaboration proposal.',
+      mou_status: mou_status || 'Pending Review',
+      status: status || 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -84,14 +84,43 @@ export async function createCollaboration(req, res, next) {
       memoryStore.collaborations.unshift(newCollab);
     }
 
+    // Auto-create chat conversation thread for this collaboration so it appears immediately in Communication Hub
+    const convId = `conv-${newCollab.id}`;
+    const uniParticipant = initiated_by === 'university' ? (req.user?.name || 'University Researcher') : 'University Researcher';
+    const indParticipant = initiated_by === 'industry' ? (req.user?.name || company_name) : company_name;
+
+    const newConv = {
+      id: convId,
+      project_id: newCollab.project_id,
+      title: `${company_name} · ${newCollab.project_id}`,
+      participant_university: uniParticipant,
+      participant_industry: indParticipant,
+      last_message: newCollab.details || 'Collaboration initiated.',
+      last_message_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      await query(
+        `INSERT INTO conversations (id, project_id, title, participant_university, participant_industry, last_message, last_message_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO NOTHING`,
+        [newConv.id, newConv.project_id, newConv.title, newConv.participant_university, newConv.participant_industry, newConv.last_message, newConv.last_message_at]
+      );
+    } catch (cErr) {
+      if (!memoryStore.conversations.some(c => c.id === convId)) {
+        memoryStore.conversations.unshift(newConv);
+      }
+    }
+
     // Determine reciprocal recipient role for automatic notification
     const recipientRole = initiated_by === 'university' ? 'industry' : 'university';
     const notifTitle = initiated_by === 'university'
-      ? `New R&D Collaboration Request for ${project_id}`
-      : `New Industry CSR Partnership Offer from ${company_name}`;
+      ? `New Collaboration Request: ${newCollab.project_id}`
+      : `New Collaboration Offer from ${company_name}`;
     const notifMessage = initiated_by === 'university'
-      ? `University research team requested collaboration with ${company_name} for ${committed_amount} grant pool.`
-      : `${company_name} initiated partnership with committed CSR fund of ${committed_amount}.`;
+      ? `University research team requested collaboration with ${company_name}${committed_amount ? ` (${committed_amount})` : ''}.`
+      : `${company_name} initiated partnership for project ${newCollab.project_id}${committed_amount ? ` with funding of ${committed_amount}` : ''}.`;
 
     const autoNotif = {
       id: `notif-${Date.now()}`,
@@ -121,7 +150,8 @@ export async function createCollaboration(req, res, next) {
     return res.status(201).json({
       success: true,
       message: 'Collaboration initiated and notifications automatically dispatched in real-time.',
-      collaboration: newCollab
+      collaboration: newCollab,
+      conversation: newConv
     });
   } catch (err) {
     next(err);

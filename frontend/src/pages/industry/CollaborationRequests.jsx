@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import IndustrySidebar from '../../components/common/IndustrySidebar';
 import IndustryHeader from '../../components/common/IndustryHeader';
 import collaborationApi from '../../api/collaborationApi';
+import authApi from '../../api/authApi';
 import getSocket from '../../api/socket';
 
 export default function CollaborationRequests() {
   const [requests, setRequests] = useState([]);
+  const [universityUsers, setUniversityUsers] = useState([]);
   const [activeFilter, setActiveFilter] = useState('All'); // 'All' | 'New' | 'Pending' | 'Accepted' | 'Rejected'
   const [selectedReq, setSelectedReq] = useState(null);
   const [toastMsg, setToastMsg] = useState('');
@@ -23,7 +25,7 @@ export default function CollaborationRequests() {
     institution: c.institution || c.company_name || 'Academic Research Partner',
     leadFaculty: c.leadFaculty || c.partner_type || 'Principal Investigator',
     status: c.status === 'PENDING' ? 'Pending' : c.status === 'APPROVED' || c.status === 'Active MOU' ? 'Accepted' : c.status === 'REJECTED' ? 'Rejected' : (c.status || 'New'),
-    grantRequested: c.committed_amount || c.grantRequested || '₹3,00,000',
+    grantRequested: c.committed_amount || c.grantRequested || 'Available',
     hardwareRequested: c.hardwareRequested || 'Telemetry & Compute Support',
     submittedDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : (c.submittedDate || 'Recent'),
     pitchAbstract: c.details || c.pitchAbstract || 'Collaborative R&D initiative for prototyping and validation.',
@@ -46,8 +48,23 @@ export default function CollaborationRequests() {
       .finally(() => setLoading(false));
   };
 
+  const fetchUniversityUsers = () => {
+    authApi.getUsers({ role: 'university' })
+      .then(res => {
+        if (res && res.success && Array.isArray(res.users) && res.users.length > 0) {
+          setUniversityUsers(res.users);
+          if (!newTargetId) {
+            setNewTargetId(res.users[0].id);
+            setNewInstitution(res.users[0].organization_or_district || res.users[0].name);
+          }
+        }
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetchCollaborations();
+    fetchUniversityUsers();
 
     const socket = getSocket();
     if (socket) {
@@ -105,11 +122,19 @@ export default function CollaborationRequests() {
   };
 
   const [showNewModal, setShowNewModal] = useState(false);
-  const [newTargetId, setNewTargetId] = useState('usr_univ_01');
+  const [newTargetId, setNewTargetId] = useState('');
   const [newProjectTitle, setNewProjectTitle] = useState('');
-  const [newInstitution, setNewInstitution] = useState('BIT Mesra, Ranchi');
-  const [newAmount, setNewAmount] = useState('₹5,00,000');
+  const [newInstitution, setNewInstitution] = useState('');
+  const [newAmount, setNewAmount] = useState('');
   const [newScope, setNewScope] = useState('');
+
+  const handleUniversitySelectChange = (userId) => {
+    setNewTargetId(userId);
+    const u = universityUsers.find(item => item.id === userId);
+    if (u) {
+      setNewInstitution(u.organization_or_district || u.name);
+    }
+  };
 
   const handleCreateRequest = async (e) => {
     e.preventDefault();
@@ -120,10 +145,10 @@ export default function CollaborationRequests() {
 
     const payload = {
       project_id: `PRJ-${Math.floor(100 + Math.random() * 900)}`,
-      company_name: newInstitution || 'Industry Research Partner',
-      partner_type: 'CSR & Hardware Sponsor',
-      committed_amount: newAmount || '₹5,00,000',
-      details: newScope.trim() || `${newProjectTitle.trim()} - Collaborative R&D project initiated.`,
+      company_name: newInstitution || 'University Partner',
+      partner_type: 'CSR & Innovation Sponsor',
+      committed_amount: newAmount.trim() || '',
+      details: newScope.trim() || `${newProjectTitle.trim()} - Collaborative R&D proposal sent to ${newInstitution || newTargetId}.`,
       status: 'PENDING',
       mou_status: 'Under Review',
       initiated_by: 'industry'
@@ -138,8 +163,9 @@ export default function CollaborationRequests() {
       }
       setShowNewModal(false);
       setNewProjectTitle('');
+      setNewAmount('');
       setNewScope('');
-      showToast(`Collaboration request dispatched successfully!`);
+      showToast(`Collaboration request dispatched to ${newInstitution || newTargetId}!`);
     } catch (err) {
       console.warn('Error creating collaboration request:', err);
       // Fallback local create
@@ -147,18 +173,19 @@ export default function CollaborationRequests() {
         id: `req-${Date.now()}`,
         projectCode: payload.project_id,
         projectTitle: newProjectTitle.trim(),
-        institution: `${newInstitution} (${newTargetId})`,
+        institution: `${newInstitution || 'University Researcher'} (${newTargetId})`,
         leadFaculty: 'Assigned Principal Investigator',
         status: 'New',
         grantRequested: newAmount,
-        hardwareRequested: 'Telemetry / Sensor Hardware Skid',
+        hardwareRequested: 'Telemetry / Testing Skid',
         submittedDate: 'Just now',
-        pitchAbstract: newScope.trim() || 'Collaborative R&D project initiated between Industry CSR and University Research Laboratory.',
+        pitchAbstract: newScope.trim() || 'Collaborative R&D project initiated between Industry and University.',
         deliverables: ['Milestone report', 'Prototype validation', 'Field trial data']
       };
       setRequests(prev => [created, ...prev]);
       setShowNewModal(false);
       setNewProjectTitle('');
+      setNewAmount('');
       setNewScope('');
       showToast(`Collaboration request sent to ${newTargetId}!`);
     }
@@ -335,15 +362,23 @@ export default function CollaborationRequests() {
             </div>
             <form onSubmit={handleCreateRequest} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Recipient (User ID / Institution / Problem ID)</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Target University Researcher / Institution (User ID)</label>
+                <select
                   value={newTargetId}
-                  onChange={(e) => setNewTargetId(e.target.value)}
-                  placeholder="e.g. usr_univ_01, BIT Mesra, or JH-1042"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
+                  onChange={(e) => handleUniversitySelectChange(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-600 cursor-pointer"
                   required
-                />
+                >
+                  {universityUsers.length === 0 ? (
+                    <option value="">No university researchers registered yet</option>
+                  ) : (
+                    universityUsers.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.id} · {u.name} ({u.organization_or_district || 'Academic Institution'})
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Project / Innovation Title</label>
@@ -351,7 +386,7 @@ export default function CollaborationRequests() {
                   type="text"
                   value={newProjectTitle}
                   onChange={(e) => setNewProjectTitle(e.target.value)}
-                  placeholder="e.g. Solar Micro-Irrigation Skid Automation"
+                  placeholder="Enter project or research initiative title..."
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                   required
                 />
@@ -363,15 +398,17 @@ export default function CollaborationRequests() {
                     type="text"
                     value={newInstitution}
                     onChange={(e) => setNewInstitution(e.target.value)}
+                    placeholder="e.g. BIT Mesra, IIT Dhanbad"
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Grant Co-Funding</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Grant Co-Funding (Optional)</label>
                   <input
                     type="text"
                     value={newAmount}
                     onChange={(e) => setNewAmount(e.target.value)}
+                    placeholder="e.g. ₹2,00,000 (Optional)"
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                   />
                 </div>

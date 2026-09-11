@@ -4,10 +4,13 @@ import IndustryHeader from '../../components/common/IndustryHeader';
 import chatApi from '../../api/chatApi';
 import projectApi from '../../api/projectApi';
 import collaborationApi from '../../api/collaborationApi';
+import authApi from '../../api/authApi';
 import aiApi from '../../api/aiApi';
 import { getSocket } from '../../api/socket';
+import { useAuth } from '../../context/AuthContext';
 
 export default function IndustryCommunication() {
+  const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('stakeholders'); // 'stakeholders' | 'ai-copilot'
   const [conversations, setConversations] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
@@ -21,6 +24,7 @@ export default function IndustryCommunication() {
   const [partnerTyping, setPartnerTyping] = useState(null);
   const [liveProjects, setLiveProjects] = useState([]);
   const [collaborations, setCollaborations] = useState([]);
+  const [registeredUnis, setRegisteredUnis] = useState([]);
   const [activatingCollab, setActivatingCollab] = useState(false);
 
   // AI Copilot States
@@ -34,16 +38,16 @@ export default function IndustryCommunication() {
       time: 'Just now',
       chips: [
         'What are the Section 135 CSR tax benefits for R&D?',
-        'How does matching grant disbursement work in PRJ-315?',
-        'Draft a collaboration MoU reminder for BIT Mesra',
+        'How does matching grant disbursement work for state projects?',
+        'Draft a collaboration MoU reminder for academic research partners',
         'Explain TRL 4 to TRL 7 requirements for state pilots'
       ]
     }
   ]);
 
   // Modal new message state
-  const [newRecipient, setNewRecipient] = useState('Dr. A. K. Sharma (BIT Mesra)');
-  const [newProject, setNewProject] = useState('PRJ-315');
+  const [newRecipient, setNewRecipient] = useState('');
+  const [newProject, setNewProject] = useState('');
   const [newMsgContent, setNewMsgContent] = useState('');
   const [creatingConv, setCreatingConv] = useState(false);
 
@@ -107,9 +111,23 @@ export default function IndustryCommunication() {
     fetchConversations(true);
     fetchCollaborations();
 
+    authApi.getUsers({ role: 'university' })
+      .then(res => {
+        if (res && res.success && Array.isArray(res.users) && res.users.length > 0) {
+          setRegisteredUnis(res.users);
+          setNewRecipient(`${res.users[0].name || res.users[0].email} (${res.users[0].organization_or_district || res.users[0].id})`);
+        }
+      })
+      .catch(() => {});
+
     projectApi.getProjects()
       .then(res => {
-        if (res && res.success && res.projects) setLiveProjects(res.projects);
+        if (res && res.success && res.projects) {
+          setLiveProjects(res.projects);
+          if (res.projects.length > 0 && !newProject) {
+            setNewProject(res.projects[0].id);
+          }
+        }
       })
       .catch(() => {});
 
@@ -186,15 +204,15 @@ export default function IndustryCommunication() {
   }, [activeConvId]);
 
   const activeConv = conversations.find(c => c.id === activeConvId) || conversations[0] || {
-    id: 'conv-1',
-    title: 'Dr. A. K. Sharma (BIT Mesra)',
-    participant_university: 'Dr. A. K. Sharma (BIT Mesra)',
-    project_id: 'PRJ-315'
+    id: 'conv-new',
+    title: 'University Coordination Channel',
+    participant_university: 'University Faculty Lead',
+    project_id: 'R&D'
   };
 
   // Check collaboration status for active conversation
   const activeCollab = collaborations.find(c => c.project_id === activeConv?.project_id);
-  const isCollaborationActive = !activeCollab || activeCollab.status === 'Active MOU' || activeCollab.status === 'CONFIRMED';
+  const isCollaborationActive = !activeCollab || activeCollab.status === 'Active MOU' || activeCollab.status === 'CONFIRMED' || activeCollab.status === 'APPROVED';
 
   // Activate collaboration MOU handler
   const handleActivateCollab = async () => {
@@ -218,13 +236,36 @@ export default function IndustryCommunication() {
     }
   };
 
+  const senderName = currentUser?.name || currentUser?.companyName || 'Industry Representative';
+
   // Send message handler from Industry
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !activeConvId) return;
+    if (!inputMessage.trim()) return;
 
-    if (!isCollaborationActive) {
-      showToast('Active Collaboration MOU required to send messages to university faculty.');
+    let targetConvId = activeConvId;
+
+    // If no conversation exists yet, auto-create one
+    if (!targetConvId) {
+      try {
+        const createRes = await chatApi.createConversation({
+          project_id: liveProjects[0]?.id || 'General',
+          title: `Direct Channel · ${senderName}`,
+          participant_university: registeredUnis[0]?.name || 'University Lead',
+          participant_industry: senderName
+        });
+        if (createRes && createRes.success && createRes.conversation) {
+          targetConvId = createRes.conversation.id;
+          setActiveConvId(targetConvId);
+          await fetchConversations();
+        }
+      } catch (err) {
+        console.warn('Auto conversation create error:', err);
+      }
+    }
+
+    if (!targetConvId) {
+      showToast('Please select or create a conversation channel.');
       return;
     }
 
@@ -234,12 +275,12 @@ export default function IndustryCommunication() {
     // Emit typing stop
     const socket = getSocket();
     if (socket) {
-      socket.emit('typing', { conversationId: activeConvId, senderName: 'Rajeev Kumar (TechNova CSR)', isTyping: false });
+      socket.emit('typing', { conversationId: targetConvId, senderName, isTyping: false });
     }
 
     const payload = {
       sender_role: 'industry',
-      sender_name: 'Rajeev Kumar (TechNova CSR)',
+      sender_name: senderName,
       recipient_role: 'university',
       text: msgText
     };
@@ -247,9 +288,9 @@ export default function IndustryCommunication() {
     // Optimistic UI update
     const optimisticMsg = {
       id: `m-ind-opt-${Date.now()}`,
-      conversation_id: activeConvId,
+      conversation_id: targetConvId,
       sender_role: 'industry',
-      sender_name: 'Rajeev Kumar (TechNova CSR)',
+      sender_name: senderName,
       recipient_role: 'university',
       text: msgText,
       created_at: new Date().toISOString()
@@ -258,7 +299,7 @@ export default function IndustryCommunication() {
     setTimeout(scrollToBottom, 50);
 
     try {
-      const res = await chatApi.sendMessage(activeConvId, payload);
+      const res = await chatApi.sendMessage(targetConvId, payload);
       if (res && res.success && res.data) {
         setMessages(prev => prev.map(m => m.id === optimisticMsg.id ? res.data : m));
       }
@@ -271,10 +312,10 @@ export default function IndustryCommunication() {
     setInputMessage(e.target.value);
     const socket = getSocket();
     if (socket && activeConvId) {
-      socket.emit('typing', { conversationId: activeConvId, senderName: 'Rajeev Kumar (TechNova CSR)', isTyping: true });
+      socket.emit('typing', { conversationId: activeConvId, senderName, isTyping: true });
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
-        socket.emit('typing', { conversationId: activeConvId, senderName: 'Rajeev Kumar (TechNova CSR)', isTyping: false });
+        socket.emit('typing', { conversationId: activeConvId, senderName, isTyping: false });
       }, 2000);
     }
   };
@@ -348,23 +389,26 @@ export default function IndustryCommunication() {
 
     setCreatingConv(true);
     try {
+      const targetProj = newProject || (liveProjects.length > 0 ? liveProjects[0].id : 'General');
+      const targetUniv = newRecipient || (registeredUnis.length > 0 ? `${registeredUnis[0].name || registeredUnis[0].email} (${registeredUnis[0].id})` : 'University Researcher');
+
       const res = await chatApi.createConversation({
-        project_id: newProject,
-        title: `${newRecipient} · ${newProject}`,
-        participant_university: newRecipient,
-        participant_industry: 'TechNova Solutions CSR Desk'
+        project_id: targetProj,
+        title: `${targetUniv} · ${targetProj}`,
+        participant_university: targetUniv,
+        participant_industry: senderName
       });
 
       if (res && res.success && res.conversation) {
         const convId = res.conversation.id;
         await chatApi.sendMessage(convId, {
           sender_role: 'industry',
-          sender_name: 'Rajeev Kumar (TechNova CSR)',
+          sender_name: senderName,
           recipient_role: 'university',
           text: newMsgContent.trim()
         });
 
-        showToast(`Conversation started with ${newRecipient}!`);
+        showToast(`Conversation started with ${targetUniv}!`);
         setShowNewMsgModal(false);
         setNewMsgContent('');
         await fetchConversations();
@@ -461,10 +505,9 @@ export default function IndustryCommunication() {
                   className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none flex-1 cursor-pointer"
                 >
                   <option value="All">All Projects</option>
-                  <option value="PRJ-315">PRJ-315 · Smart Waste & Water Telemetry</option>
-                  <option value="PRJ-925">PRJ-925 · Smart Irrigation Monitoring</option>
-                  <option value="PRJ-051">PRJ-051 · AI Crop Disease Detection</option>
-                  <option value="PRJ-038">PRJ-038 · Rural Solar Monitoring</option>
+                  {liveProjects.map(p => (
+                    <option key={p.id} value={p.id}>{p.id} · {p.title}</option>
+                  ))}
                 </select>
               </div>
 
@@ -503,7 +546,7 @@ export default function IndustryCommunication() {
                 <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-2 space-y-1 custom-scrollbar">
                   {filteredConversations.length === 0 ? (
                     <div className="p-6 text-center text-slate-400">
-                      <p className="text-xs font-semibold">No channels match filter.</p>
+                      <p className="text-xs font-semibold">No active channels yet.</p>
                       <button
                         onClick={() => setShowNewMsgModal(true)}
                         className="mt-2 text-xs text-emerald-700 font-bold hover:underline"
@@ -539,7 +582,7 @@ export default function IndustryCommunication() {
                               {conv.project_id || 'PRJ'}
                             </span>
                             <span className="text-[11px] text-slate-500 truncate">
-                              {conv.participant_university || 'BIT Mesra R&D'}
+                              {conv.participant_university || 'University Partner'}
                             </span>
                           </div>
 
@@ -569,7 +612,7 @@ export default function IndustryCommunication() {
                         {isCollaborationActive ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>Active MOU (Collaborating)</span>
+                            <span>Active Channel</span>
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
@@ -578,13 +621,13 @@ export default function IndustryCommunication() {
                         )}
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                        <span className="font-mono text-emerald-800 font-semibold">{activeConv.project_id || 'PRJ-315'}</span>
-                        <span>•</span>
-                        <span>{activeConv.participant_university || 'Principal Investigator'}</span>
-                        {activeCollab && (
+                        {activeConv.project_id && <span className="font-mono text-emerald-800 font-semibold">{activeConv.project_id}</span>}
+                        {activeConv.project_id && activeConv.participant_university && <span>•</span>}
+                        <span>{activeConv.participant_university || 'Academic Researcher'}</span>
+                        {activeCollab && activeCollab.committed_amount && (
                           <>
                             <span>•</span>
-                            <span className="text-emerald-700 font-medium">Committed: {activeCollab.committed_amount || '₹2,50,000'}</span>
+                            <span className="text-emerald-700 font-medium">Committed: {activeCollab.committed_amount}</span>
                           </>
                         )}
                       </p>
@@ -602,44 +645,6 @@ export default function IndustryCommunication() {
                     </button>
                   )}
                 </div>
-
-                {/* Collaboration Gate Banner (If not in active collaboration) */}
-                {!isCollaborationActive && (
-                  <div className="m-4 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-200 text-amber-950 shadow-2xs">
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl">🔒</div>
-                      <div className="flex-1">
-                        <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider">
-                          Collaboration Gate Active · Direct Chatting Locked
-                        </h4>
-                        <p className="text-xs text-slate-700 mt-1 leading-relaxed">
-                          Platform governance requires a signed **CSR Collaboration MOU** before industry representatives can exchange real-time coordination messages with university researchers for <strong className="font-mono">{activeConv.project_id}</strong>.
-                        </p>
-                        <div className="mt-3 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={handleActivateCollab}
-                            disabled={activatingCollab}
-                            className="px-4 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5"
-                          >
-                            <span>✍️</span>
-                            <span>{activatingCollab ? 'Activating MOU...' : 'Accept & Ratify CSR Collaboration MOU'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab('ai-copilot');
-                              handleSendAiPrompt(`Explain CSR tax benefits and MoU terms for ${activeConv.participant_university || 'University Lead'} on project ${activeConv.project_id}`);
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 transition cursor-pointer"
-                          >
-                            🤖 Ask AI CSR Copilot
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Messages Feed */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
@@ -663,7 +668,7 @@ export default function IndustryCommunication() {
                           className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                         >
                           <span className="text-[10px] text-slate-400 mb-1 px-1 font-medium">
-                            {msg.sender_name || (isMe ? 'TechNova CSR Team' : 'University Faculty')} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                            {msg.sender_name || (isMe ? senderName : 'University Faculty')} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
                           </span>
                           <div
                             className={`max-w-[80%] sm:max-w-md p-3.5 rounded-2xl text-xs leading-relaxed shadow-2xs ${
@@ -695,13 +700,12 @@ export default function IndustryCommunication() {
                     type="text"
                     value={inputMessage}
                     onChange={handleInputChange}
-                    disabled={!isCollaborationActive}
-                    placeholder={isCollaborationActive ? "Type real-time message to university researcher..." : "Ratify Collaboration MOU above to unlock chat..."}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-600 focus:bg-white transition disabled:bg-slate-100 disabled:cursor-not-allowed"
+                    placeholder="Type real-time message to university researcher..."
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-600 focus:bg-white transition"
                   />
                   <button
                     type="submit"
-                    disabled={!inputMessage.trim() || !isCollaborationActive}
+                    disabled={!inputMessage.trim()}
                     className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Send</span>
@@ -812,17 +816,22 @@ export default function IndustryCommunication() {
 
             <form onSubmit={handleStartNewMessage} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Select University Faculty / Lead</label>
+                <label className="block font-semibold text-slate-700 mb-1">Select University Faculty / User ID</label>
                 <select
                   value={newRecipient}
                   onChange={(e) => setNewRecipient(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600"
                   required
                 >
-                  <option value="Dr. A. K. Sharma (BIT Mesra)">Dr. A. K. Sharma (BIT Mesra · Smart Waste Lead)</option>
-                  <option value="Dr. V. K. Verma (BIT Mesra)">Dr. V. K. Verma (BIT Mesra · Agri Telemetry)</option>
-                  <option value="Dr. Sneha Gupta (BIT Mesra)">Dr. Sneha Gupta (BIT Mesra · AI Crop Disease)</option>
-                  <option value="Dr. Rajeshwar Soren (Dean R&D)">Dr. Rajeshwar Soren (Dean R&D, BIT Mesra)</option>
+                  {registeredUnis.length === 0 ? (
+                    <option value="">No registered university users found</option>
+                  ) : (
+                    registeredUnis.map((u) => (
+                      <option key={u.id} value={`${u.name || u.email} (${u.organization_or_district || u.id})`}>
+                        {u.id} · {u.name || u.email} ({u.organization_or_district || 'University'})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -834,13 +843,13 @@ export default function IndustryCommunication() {
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-mono"
                   required
                 >
-                  <option value="PRJ-315">PRJ-315 · Smart Waste & Water Telemetry</option>
-                  <option value="PRJ-925">PRJ-925 · Smart Irrigation Monitoring</option>
-                  <option value="PRJ-051">PRJ-051 · AI Crop Disease Detection</option>
-                  <option value="PRJ-038">PRJ-038 · Rural Solar Monitoring</option>
-                  {liveProjects.map(pr => (
-                    <option key={pr.id} value={pr.id}>{pr.id} · {pr.title}</option>
-                  ))}
+                  {liveProjects.length === 0 ? (
+                    <option value="General">General Research Consultation</option>
+                  ) : (
+                    liveProjects.map(pr => (
+                      <option key={pr.id} value={pr.id}>{pr.id} · {pr.title}</option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -850,7 +859,7 @@ export default function IndustryCommunication() {
                   rows="3"
                   value={newMsgContent}
                   onChange={(e) => setNewMsgContent(e.target.value)}
-                  placeholder="e.g. Greetings Dr. Sharma, our CSR committee is reviewing your hardware tranche..."
+                  placeholder="e.g. Greetings, our CSR committee is reviewing your project requirements..."
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600 resize-none"
                   required
                 />

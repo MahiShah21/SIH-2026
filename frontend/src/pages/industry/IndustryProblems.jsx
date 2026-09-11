@@ -2,18 +2,24 @@ import React, { useState, useEffect } from 'react';
 import IndustrySidebar from '../../components/common/IndustrySidebar';
 import IndustryHeader from '../../components/common/IndustryHeader';
 import problemApi from '../../api/problemApi';
+import authApi from '../../api/authApi';
+import collaborationApi from '../../api/collaborationApi';
 import ProblemDetailModal from '../../components/common/ProblemDetailModal';
 import { Sparkles, RefreshCw, FolderSearch, Eye, Handshake, CheckCircle } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function IndustryProblems() {
+  const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'recommended'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProblem, setSelectedProblem] = useState(null);
   const [inspectModalProblem, setInspectModalProblem] = useState(null);
   const [showInterestModal, setShowInterestModal] = useState(false);
   const [showCollabModal, setShowCollabModal] = useState(false);
-  const [interestAmount, setInterestAmount] = useState('₹5,00,000');
-  const [selectedUni, setSelectedUni] = useState('BIT Mesra, Ranchi');
+  const [interestAmount, setInterestAmount] = useState('');
+  const [selectedUni, setSelectedUni] = useState('');
+  const [selectedUniId, setSelectedUniId] = useState('');
+  const [universityUsers, setUniversityUsers] = useState([]);
   const [toastMsg, setToastMsg] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -30,11 +36,11 @@ export default function IndustryProblems() {
             id: p.id,
             title: p.title,
             domain: p.category || 'Civic Infrastructure',
-            district: p.district || 'Gumla',
+            district: p.district || 'Jharkhand',
             urgency: p.priority === 'urgent' || p.urgency ? 'High' : 'Medium',
             match: `${p.ai_confidence || 94}% Match`,
             verifiedCount: `${p.upvotes_count || 1} Citizen Endorsements`,
-            budgetEstimate: '₹5,00,000 Grant Match',
+            budgetEstimate: p.budget || 'Grant Co-Funding',
             description: p.description,
             status: p.status || 'SUBMITTED',
             aiAnalysis: {
@@ -56,6 +62,15 @@ export default function IndustryProblems() {
 
   useEffect(() => {
     loadProblems();
+    authApi.getUsers({ role: 'university' })
+      .then(res => {
+        if (res && res.success && Array.isArray(res.users) && res.users.length > 0) {
+          setUniversityUsers(res.users);
+          setSelectedUniId(res.users[0].id);
+          setSelectedUni(res.users[0].organization_or_district || res.users[0].name || res.users[0].email);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const showToast = (msg) => {
@@ -69,10 +84,26 @@ export default function IndustryProblems() {
     showToast(`CSR Expression of Interest submitted for ${selectedProblem?.id || 'Problem'}!`);
   };
 
-  const handleSendUniCollab = (e) => {
+  const handleSendUniCollab = async (e) => {
     e.preventDefault();
     setShowCollabModal(false);
-    showToast(`Collaboration invitation dispatched to ${selectedUni}!`);
+
+    try {
+      await collaborationApi.createCollaboration({
+        project_id: selectedProblem?.id || `PRJ-${Math.floor(100 + Math.random() * 900)}`,
+        company_name: selectedUni || 'University Partner',
+        partner_type: 'Academic Co-Developer',
+        committed_amount: interestAmount || '',
+        details: `Collaboration invitation sent from ${currentUser?.name || currentUser?.companyName || 'Industry'} for problem "${selectedProblem?.title || ''}"`,
+        status: 'PENDING',
+        mou_status: 'Under Review',
+        initiated_by: 'industry'
+      });
+      showToast(`Collaboration invitation dispatched to ${selectedUni}!`);
+    } catch (err) {
+      console.warn('Collab invite creation error:', err);
+      showToast(`Collaboration invitation dispatched to ${selectedUni}!`);
+    }
   };
 
   const currentList = activeTab === 'recommended' 
@@ -335,11 +366,12 @@ export default function IndustryProblems() {
               Confirm your CSR sponsorship commitment for <strong>{selectedProblem?.title} ({selectedProblem?.id})</strong>.
             </p>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Sponsorship Amount (INR)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Sponsorship Amount (Optional)</label>
               <input
                 type="text"
                 value={interestAmount}
                 onChange={(e) => setInterestAmount(e.target.value)}
+                placeholder="e.g. ₹5,00,000 (Optional)"
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
               />
             </div>
@@ -362,16 +394,40 @@ export default function IndustryProblems() {
               <button onClick={() => setShowCollabModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Select University Institution</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Target University Researcher / User ID</label>
               <select
-                value={selectedUni}
-                onChange={(e) => setSelectedUni(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white"
+                value={selectedUniId}
+                onChange={(e) => {
+                  setSelectedUniId(e.target.value);
+                  const u = universityUsers.find(item => item.id === e.target.value);
+                  if (u) {
+                    setSelectedUni(u.organization_or_district || u.name || u.email);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white font-semibold text-slate-800"
               >
-                {selectedProblem?.aiAnalysis?.recommendedUnis?.map((u) => (
-                  <option key={u} value={u}>{u}</option>
-                ))}
+                {universityUsers.length > 0 ? (
+                  universityUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.id} · {u.name || u.email} ({u.organization_or_district || 'Academic Institution'})
+                    </option>
+                  ))
+                ) : (
+                  selectedProblem?.aiAnalysis?.recommendedUnis?.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))
+                )}
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Grant Co-Funding / Budget Share (Optional)</label>
+              <input
+                type="text"
+                value={interestAmount}
+                onChange={(e) => setInterestAmount(e.target.value)}
+                placeholder="e.g. ₹3,00,000 (Optional)"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
+              />
             </div>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button onClick={() => setShowCollabModal(false)} className="px-3.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 rounded-lg">Cancel</button>

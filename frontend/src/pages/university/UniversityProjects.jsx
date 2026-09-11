@@ -496,8 +496,8 @@ export default function UniversityProjects() {
                   <div className="flex flex-wrap items-center gap-2.5">
                     <button
                       onClick={() => {
-                        setEditBudgetInput(selectedProject.total_budget || selectedProject.budget || '₹5,00,000');
-                        setEditDisbursedInput(selectedProject.disbursed_amount || selectedProject.disbursed || '₹2,50,000');
+                        setEditBudgetInput(selectedProject.total_budget || selectedProject.budget || '');
+                        setEditDisbursedInput(selectedProject.disbursed_amount || selectedProject.disbursed || '');
                         setShowBudgetModal(true);
                       }}
                       className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5"
@@ -629,8 +629,8 @@ export default function UniversityProjects() {
                           <button
                             type="button"
                             onClick={() => {
-                              setEditBudgetInput(selectedProject.total_budget || selectedProject.budget || '₹5,00,000');
-                              setEditDisbursedInput(selectedProject.disbursed_amount || selectedProject.disbursed || '₹2,50,000');
+                              setEditBudgetInput(selectedProject.total_budget || selectedProject.budget || '');
+                              setEditDisbursedInput(selectedProject.disbursed_amount || selectedProject.disbursed || '');
                               setShowBudgetModal(true);
                             }}
                             className="text-xs font-bold text-teal-700 hover:text-teal-800 underline cursor-pointer"
@@ -757,8 +757,8 @@ export default function UniversityProjects() {
                     <button
                       type="button"
                       onClick={() => {
-                        setEditBudgetInput(selectedProject.total_budget || selectedProject.budget || '₹5,00,000');
-                        setEditDisbursedInput(selectedProject.disbursed_amount || selectedProject.disbursed || '₹2,50,000');
+                        setEditBudgetInput(selectedProject.total_budget || selectedProject.budget || '');
+                        setEditDisbursedInput(selectedProject.disbursed_amount || selectedProject.disbursed || '');
                         setShowBudgetModal(true);
                       }}
                       className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"

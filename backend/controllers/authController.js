@@ -223,3 +223,39 @@ export function getDemoCredentials(req, res) {
     credentials
   });
 }
+
+/**
+ * GET /api/auth/users
+ * Query registered stakeholders by role (e.g. role=industry or role=university)
+ */
+export async function getUsers(req, res, next) {
+  try {
+    const { role } = req.query;
+    let users = [];
+
+    try {
+      let sql = 'SELECT id, email, phone, role, name, title, organization_or_district, avatar_url, karma_points, created_at FROM users WHERE 1=1';
+      const params = [];
+      if (role && role !== 'all') {
+        params.push(role.toLowerCase());
+        sql += ` AND LOWER(role) = $${params.length}`;
+      }
+      sql += ' ORDER BY name ASC';
+      const resDb = await query(sql, params);
+      users = resDb.rows;
+    } catch (e) {
+      users = memoryStore.users.map(({ password_hash, ...u }) => u);
+      if (role && role !== 'all') {
+        users = users.filter(u => u.role?.toLowerCase() === role.toLowerCase());
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: users.length,
+      users
+    });
+  } catch (err) {
+    next(err);
+  }
+}

@@ -5,10 +5,13 @@ import chatApi from '../../api/chatApi';
 import projectApi from '../../api/projectApi';
 import industryApi from '../../api/industryApi';
 import collaborationApi from '../../api/collaborationApi';
+import authApi from '../../api/authApi';
 import aiApi from '../../api/aiApi';
 import { getSocket } from '../../api/socket';
+import { useAuth } from '../../context/AuthContext';
 
 export default function UniversityCommunication() {
+  const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('conversations'); // 'conversations' | 'ai-copilot'
   const [conversations, setConversations] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
@@ -22,10 +25,10 @@ export default function UniversityCommunication() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(null);
 
-  // Collaborations & Projects
+  // Collaborations, Projects, and Available Industry Stakeholders
   const [collaborations, setCollaborations] = useState([]);
   const [liveProjects, setLiveProjects] = useState([]);
-  const [livePartners, setLivePartners] = useState([]);
+  const [industryPartners, setIndustryPartners] = useState([]);
   const [activatingCollab, setActivatingCollab] = useState(false);
 
   // AI Copilot States
@@ -35,25 +38,26 @@ export default function UniversityCommunication() {
     {
       id: 'ai-intro',
       sender: 'bot',
-      text: `Hello Dean & Faculty Researchers! I am your **Jharkhand Academic R&D & Collaboration Copilot** 🤖.\n\nI can help you with:\n- State R&D grant eligibility, milestone tranches & proof-of-concept funding.\n- Matching citizen grievances to your lab's faculty expertise & patents.\n- Co-drafting industry tripartite MoUs with Tata Steel, TechNova, and SunPower.\n- Reviewing TRL advancement & collaboration eligibility before unlocking chat.`,
+      text: `Hello! I am your **JanSetu Academic R&D & Collaboration Copilot** 🤖.\n\nI can help you with:\n- State R&D grant eligibility, milestone tranches & proof-of-concept guidelines.\n- Formulating bilateral & tripartite MoUs for research translation.\n- Exploring verified civic challenges matching your institution's expertise.`,
       time: 'Just now',
       chips: [
         'How to activate an Industry Collaboration MoU?',
-        'Show active water challenges in Gumla',
-        'Draft a Tripartite MoU for PRJ-315',
-        'How do State R&D matching grants work?'
+        'Show active civic challenges',
+        'State R&D matching grant guidelines'
       ]
     }
   ]);
 
   // Modal new message state
-  const [newRecipient, setNewRecipient] = useState('TechNova Systems');
-  const [newProject, setNewProject] = useState('PRJ-315');
+  const [newRecipient, setNewRecipient] = useState('');
+  const [newProject, setNewProject] = useState('General');
   const [newMsgContent, setNewMsgContent] = useState('');
   const [creatingConv, setCreatingConv] = useState(false);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+
+  const myDisplayName = currentUser?.name || 'University Researcher';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -68,10 +72,14 @@ export default function UniversityCommunication() {
   const fetchConversations = async (selectFirst = false) => {
     try {
       const res = await chatApi.getConversations();
-      if (res && res.success && res.conversations) {
+      if (res && res.success && Array.isArray(res.conversations)) {
         setConversations(res.conversations);
-        if ((selectFirst || !activeConvId) && res.conversations.length > 0) {
-          setActiveConvId(res.conversations[0].id);
+        if (res.conversations.length > 0) {
+          if (selectFirst || !activeConvId) {
+            setActiveConvId(res.conversations[0].id);
+          }
+        } else {
+          setActiveConvId(null);
         }
       }
     } catch (err) {
@@ -93,7 +101,10 @@ export default function UniversityCommunication() {
 
   // 3. Fetch live messages for active conversation
   const fetchMessagesForConv = async (convId) => {
-    if (!convId) return;
+    if (!convId) {
+      setMessages([]);
+      return;
+    }
     setLoadingMessages(true);
     try {
       const res = await chatApi.getMessages(convId);
@@ -108,7 +119,7 @@ export default function UniversityCommunication() {
     }
   };
 
-  // Load partners, collaborations and projects
+  // Load partners, industry users, collaborations and projects
   useEffect(() => {
     fetchConversations(true);
     fetchCollaborations();
@@ -119,11 +130,37 @@ export default function UniversityCommunication() {
       })
       .catch(() => {});
 
-    industryApi.getPartners()
-      .then(res => {
-        if (res && res.success && res.partners) setLivePartners(res.partners);
-      })
-      .catch(() => {});
+    // Fetch industry partners & users
+    Promise.all([
+      authApi.getUsers({ role: 'industry' }).catch(() => ({ users: [] })),
+      industryApi.getIndustryPartners().catch(() => ({ partners: [] }))
+    ]).then(([uRes, pRes]) => {
+      const list = [];
+      const seen = new Set();
+      if (uRes?.users) {
+        uRes.users.forEach(u => {
+          seen.add(u.id);
+          list.push({
+            id: u.id,
+            name: `${u.name} (${u.organization_or_district || 'Industry Partner'})`
+          });
+        });
+      }
+      if (pRes?.partners) {
+        pRes.partners.forEach(p => {
+          if (!seen.has(p.id)) {
+            list.push({
+              id: p.id,
+              name: `${p.company_name || p.name} (${p.sector || 'Industry'})`
+            });
+          }
+        });
+      }
+      setIndustryPartners(list);
+      if (list.length > 0 && !newRecipient) {
+        setNewRecipient(list[0].name);
+      }
+    });
 
     const socket = getSocket();
     if (socket) {
@@ -197,15 +234,10 @@ export default function UniversityCommunication() {
     }
   }, [activeConvId]);
 
-  const activeConv = conversations.find(c => c.id === activeConvId) || conversations[0] || {
-    id: 'conv-1',
-    title: 'University-Industry Collaboration Channel',
-    participant_industry: 'TechNova Systems',
-    project_id: 'PRJ-315'
-  };
+  const activeConv = conversations.find(c => c.id === activeConvId) || (conversations.length > 0 ? conversations[0] : null);
 
   // Check collaboration status for active conversation
-  const activeCollab = collaborations.find(c => c.project_id === activeConv?.project_id);
+  const activeCollab = activeConv ? collaborations.find(c => c.project_id === activeConv?.project_id) : null;
   const isCollaborationActive = !activeCollab || activeCollab.status === 'Active MOU' || activeCollab.status === 'CONFIRMED';
 
   // Activate collaboration MOU handler
@@ -219,7 +251,7 @@ export default function UniversityCommunication() {
         updated_by: 'university'
       });
       if (res && res.success) {
-        showToast(`Collaboration MOU Activated with ${activeCollab.company_name}! Channel Unlocked.`);
+        showToast(`Collaboration MOU Activated with ${activeCollab.company_name}!`);
         fetchCollaborations();
       }
     } catch (err) {
@@ -233,25 +265,50 @@ export default function UniversityCommunication() {
   // Send message handler
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !activeConvId) return;
-
-    if (!isCollaborationActive) {
-      showToast('Active Collaboration MOU required to send messages to this partner.');
-      return;
-    }
+    if (!inputMessage.trim()) return;
 
     const msgText = inputMessage.trim();
     setInputMessage('');
 
+    // If there is no active conversation yet, auto-create one first
+    let currentId = activeConvId;
+    if (!currentId) {
+      if (industryPartners.length === 0) {
+        showToast('Please add or select an industry partner first.');
+        return;
+      }
+      const targetPartner = industryPartners[0].name;
+      try {
+        const cRes = await chatApi.createConversation({
+          project_id: liveProjects[0]?.id || 'General',
+          title: `${targetPartner}`,
+          participant_university: myDisplayName,
+          participant_industry: targetPartner
+        });
+        if (cRes && cRes.conversation) {
+          currentId = cRes.conversation.id;
+          setActiveConvId(currentId);
+          await fetchConversations();
+        }
+      } catch (err) {
+        console.warn('Auto create conv error:', err);
+      }
+    }
+
+    if (!currentId) {
+      showToast('Could not initiate conversation. Please click "+ Start Chat".');
+      return;
+    }
+
     // Emit typing stop
     const socket = getSocket();
     if (socket) {
-      socket.emit('typing', { conversationId: activeConvId, senderName: 'Dr. A. K. Sharma (BIT Mesra)', isTyping: false });
+      socket.emit('typing', { conversationId: currentId, senderName: myDisplayName, isTyping: false });
     }
 
     const payload = {
       sender_role: 'university',
-      sender_name: 'Dr. A. K. Sharma (BIT Mesra)',
+      sender_name: myDisplayName,
       recipient_role: 'industry',
       text: msgText
     };
@@ -259,9 +316,9 @@ export default function UniversityCommunication() {
     // Optimistic UI update
     const optimisticMsg = {
       id: `m-opt-${Date.now()}`,
-      conversation_id: activeConvId,
+      conversation_id: currentId,
       sender_role: 'university',
-      sender_name: 'Dr. A. K. Sharma (BIT Mesra)',
+      sender_name: myDisplayName,
       recipient_role: 'industry',
       text: msgText,
       created_at: new Date().toISOString()
@@ -270,7 +327,7 @@ export default function UniversityCommunication() {
     setTimeout(scrollToBottom, 50);
 
     try {
-      const res = await chatApi.sendMessage(activeConvId, payload);
+      const res = await chatApi.sendMessage(currentId, payload);
       if (res && res.success && res.data) {
         setMessages(prev => prev.map(m => m.id === optimisticMsg.id ? res.data : m));
       }
@@ -283,10 +340,10 @@ export default function UniversityCommunication() {
     setInputMessage(e.target.value);
     const socket = getSocket();
     if (socket && activeConvId) {
-      socket.emit('typing', { conversationId: activeConvId, senderName: 'Dr. A. K. Sharma (BIT Mesra)', isTyping: true });
+      socket.emit('typing', { conversationId: activeConvId, senderName: myDisplayName, isTyping: true });
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
-        socket.emit('typing', { conversationId: activeConvId, senderName: 'Dr. A. K. Sharma (BIT Mesra)', isTyping: false });
+        socket.emit('typing', { conversationId: activeConvId, senderName: myDisplayName, isTyping: false });
       }, 2000);
     }
   };
@@ -334,7 +391,7 @@ export default function UniversityCommunication() {
 
     // Dynamic fallback
     setTimeout(() => {
-      let botResponse = `Here is guidance regarding **"${textToSend}"** for University Faculty & R&D Teams:\n\n1. **Grant Sanction:** Government of Jharkhand matches up to ₹15 Lakhs for university prototypes addressing verified citizen grievances.\n2. **Academic IP Rights:** Universities retain non-exclusive patenting rights while granting the State a perpetual license for public welfare deployment.\n3. **Field Testing:** You can request municipal access or village panchayat site clearances directly through the portal.`;
+      let botResponse = `Here is guidance regarding **"${textToSend}"** for University Faculty & R&D Teams:\n\n1. **Grant Sanction:** Government of Jharkhand matches state R&D grants for university prototypes addressing verified citizen grievances.\n2. **Academic IP Rights:** Universities retain non-exclusive patenting rights while granting the State a perpetual license for public welfare deployment.\n3. **Field Testing:** You can request municipal access or village panchayat site clearances directly through the portal.`;
       let chips = ['How to submit R&D proposal?', 'View lab equipment procurement rules', 'Check student stipend guidelines'];
 
       setAiMessages(prev => [
@@ -354,17 +411,17 @@ export default function UniversityCommunication() {
   // Create new conversation modal submit
   const handleStartNewMessage = async (e) => {
     e.preventDefault();
-    if (!newMsgContent.trim()) {
-      showToast('Please type an initial message');
+    if (!newMsgContent.trim() || !newRecipient) {
+      showToast('Please select an industry partner and enter a message.');
       return;
     }
 
     setCreatingConv(true);
     try {
       const res = await chatApi.createConversation({
-        project_id: newProject,
-        title: `${newRecipient} · ${newProject}`,
-        participant_university: 'Dr. A. K. Sharma (BIT Mesra)',
+        project_id: newProject || 'General',
+        title: `${newRecipient} · ${newProject || 'General'}`,
+        participant_university: myDisplayName,
         participant_industry: newRecipient
       });
 
@@ -373,7 +430,7 @@ export default function UniversityCommunication() {
         // Send initial message
         await chatApi.sendMessage(convId, {
           sender_role: 'university',
-          sender_name: 'Dr. A. K. Sharma (BIT Mesra)',
+          sender_name: myDisplayName,
           recipient_role: 'industry',
           text: newMsgContent.trim()
         });
@@ -480,10 +537,9 @@ export default function UniversityCommunication() {
                   className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none flex-1 cursor-pointer"
                 >
                   <option value="All">All Projects</option>
-                  <option value="PRJ-315">PRJ-315 · Smart Waste Management</option>
-                  <option value="PRJ-925">PRJ-925 · Smart Irrigation Monitoring</option>
-                  <option value="PRJ-051">PRJ-051 · AI Crop Disease Detection</option>
-                  <option value="PRJ-038">PRJ-038 · Rural Solar Monitoring</option>
+                  {liveProjects.map(pr => (
+                    <option key={pr.id} value={pr.id}>{pr.id} · {pr.title}</option>
+                  ))}
                 </select>
               </div>
 
@@ -496,7 +552,7 @@ export default function UniversityCommunication() {
             {/* 2-Column Real-Time Chat Interface */}
             <div className="flex-1 bg-white border border-slate-200/90 rounded-2xl shadow-2xs flex overflow-hidden min-h-0">
               {/* Left Column: Conversation List */}
-              <div className="w-[320px] sm:w-[350px] border-r border-slate-200 flex flex-col shrink-0 bg-slate-50/50">
+              <div className="w-[300px] sm:w-[340px] border-r border-slate-200 flex flex-col shrink-0 bg-slate-50/50">
                 <div className="p-3.5 border-b border-slate-200 bg-white">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Channels &amp; Direct</h3>
@@ -522,17 +578,17 @@ export default function UniversityCommunication() {
                 <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-2 space-y-1 custom-scrollbar">
                   {filteredConversations.length === 0 ? (
                     <div className="p-6 text-center text-slate-400">
-                      <p className="text-xs font-semibold">No channels match filter.</p>
+                      <p className="text-xs font-semibold">No active channels yet.</p>
                       <button
                         onClick={() => setShowNewMsgModal(true)}
-                        className="mt-2 text-xs text-teal-600 font-bold hover:underline"
+                        className="mt-2 text-xs text-teal-600 font-bold hover:underline cursor-pointer"
                       >
                         + Start a new chat
                       </button>
                     </div>
                   ) : (
                     filteredConversations.map((conv) => {
-                      const isActive = conv.id === activeConv.id;
+                      const isActive = activeConv && conv.id === activeConv.id;
 
                       return (
                         <div
@@ -555,10 +611,10 @@ export default function UniversityCommunication() {
 
                           <div className="flex items-center gap-1.5 mb-1.5">
                             <span className="px-1.5 py-0.2 bg-teal-50 text-teal-700 border border-teal-200 rounded text-[9px] font-mono font-semibold">
-                              {conv.project_id || 'PRJ'}
+                              {conv.project_id || 'Direct'}
                             </span>
                             <span className="text-[11px] text-slate-500 truncate">
-                              {conv.participant_industry || 'CSR Partner'}
+                              {conv.participant_industry || 'Industry Partner'}
                             </span>
                           </div>
 
@@ -574,161 +630,127 @@ export default function UniversityCommunication() {
 
               {/* Right Column: Active Chat View */}
               <div className="flex-1 flex flex-col min-w-0 bg-[#f9fafc]">
-                {/* Chat Top Banner */}
-                <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 shadow-2xs">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 font-bold text-sm">
-                      🏢
+                {activeConv ? (
+                  <>
+                    {/* Chat Top Banner */}
+                    <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 font-bold text-sm">
+                          🏢
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-sm font-bold text-slate-900 leading-tight">
+                              {activeConv.title || activeConv.participant_industry || 'Industry Partner'}
+                            </h2>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>Live Channel</span>
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                            <span className="font-mono text-teal-700 font-semibold">{activeConv.project_id || 'Direct'}</span>
+                            <span>•</span>
+                            <span>{activeConv.participant_industry || 'Industry Partner'}</span>
+                            {activeCollab?.committed_amount && (
+                              <>
+                                <span>•</span>
+                                <span className="text-emerald-700 font-medium">Co-Funding: {activeCollab.committed_amount}</span>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Messages Feed */}
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
+                      {loadingMessages ? (
+                        <div className="flex items-center justify-center h-full text-slate-400 text-xs font-semibold">
+                          Loading real-time message stream...
+                        </div>
+                      ) : messages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs space-y-2">
+                          <div className="text-3xl">💬</div>
+                          <p className="font-bold text-slate-700">No messages in this channel yet.</p>
+                          <p className="text-[11px] text-slate-400">Type a message below to coordinate directly in real-time.</p>
+                        </div>
+                      ) : (
+                        messages.map((msg) => {
+                          const isMe = msg.sender_role === 'university';
+
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                            >
+                              <span className="text-[10px] text-slate-400 mb-1 px-1 font-medium">
+                                {msg.sender_name || (isMe ? myDisplayName : 'Industry Partner')} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                              </span>
+                              <div
+                                className={`max-w-[80%] sm:max-w-md p-3.5 rounded-2xl text-xs leading-relaxed shadow-2xs ${
+                                  isMe
+                                    ? 'bg-[#0b1329] text-white rounded-tr-none'
+                                    : 'bg-white text-slate-800 border border-slate-200/90 rounded-tl-none'
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap">{msg.text}</p>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+
+                    {/* Typing status */}
+                    {partnerTyping && (
+                      <div className="px-4 py-1 text-[11px] text-teal-600 font-medium italic animate-pulse flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" />
+                        <span>{partnerTyping} is typing...</span>
+                      </div>
+                    )}
+
+                    {/* Message Input Bar */}
+                    <form onSubmit={handleSendMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={inputMessage}
+                        onChange={handleInputChange}
+                        placeholder="Type real-time message to industry partner..."
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:bg-white transition"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!inputMessage.trim()}
+                        className="px-5 py-2.5 bg-[#0b1329] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Send</span>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 space-y-3">
+                    <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center text-3xl">
+                      💬
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-bold text-slate-900 leading-tight">
-                          {activeConv.title || activeConv.participant_industry || 'Industry Partner'}
-                        </h2>
-                        {isCollaborationActive ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>Collab Active (MOU Verified)</span>
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
-                            <span>⚠️ MOU Pending</span>
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                        <span className="font-mono text-teal-700 font-semibold">{activeConv.project_id || 'PRJ-315'}</span>
-                        <span>•</span>
-                        <span>{activeConv.participant_industry || 'CSR Sponsor Desk'}</span>
-                        {activeCollab && (
-                          <>
-                            <span>•</span>
-                            <span className="text-emerald-700 font-medium">Grant: {activeCollab.committed_amount || '₹2,50,000'}</span>
-                          </>
-                        )}
+                      <h3 className="text-base font-bold text-slate-800">No Chat Selected</h3>
+                      <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                        Start a direct conversation with an available industry CSR partner or select a channel from the left.
                       </p>
                     </div>
-                  </div>
-
-                  {!isCollaborationActive && (
                     <button
-                      onClick={handleActivateCollab}
-                      disabled={activatingCollab}
-                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      onClick={() => setShowNewMsgModal(true)}
+                      className="px-5 py-2.5 rounded-xl bg-[#0b1329] hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer transition"
                     >
-                      <span>🤝</span>
-                      <span>{activatingCollab ? 'Activating...' : 'Activate MOU to Chat'}</span>
+                      + Start Conversation with Industry Partner
                     </button>
-                  )}
-                </div>
-
-                {/* Collaboration Gate Banner (If not in active collaboration) */}
-                {!isCollaborationActive && (
-                  <div className="m-4 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 text-amber-950 shadow-2xs">
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl">🔒</div>
-                      <div className="flex-1">
-                        <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">
-                          Collaboration Gate Active · Direct Chatting Locked
-                        </h4>
-                        <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                          Platform policy requires an **Active Tripartite or Bilateral MOU** before university researchers and industry partners can exchange real-time communication messages for <strong className="font-mono">{activeConv.project_id}</strong>.
-                        </p>
-                        <div className="mt-3 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={handleActivateCollab}
-                            disabled={activatingCollab}
-                            className="px-4 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5"
-                          >
-                            <span>✍️</span>
-                            <span>{activatingCollab ? 'Activating MOU...' : 'Sign & Activate Collaboration MOU'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab('ai-copilot');
-                              handleSendAiPrompt(`Draft a tripartite MoU for ${activeConv.participant_industry || 'Industry Partner'} on project ${activeConv.project_id}`);
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-xs font-semibold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
-                          >
-                            🤖 Draft MoU via AI Copilot
-                          </button>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 )}
-
-                {/* Messages Feed */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
-                  {loadingMessages ? (
-                    <div className="flex items-center justify-center h-full text-slate-400 text-xs font-semibold">
-                      Loading real-time message stream...
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs space-y-2">
-                      <div className="text-3xl">💬</div>
-                      <p className="font-bold text-slate-700">No messages in this channel yet.</p>
-                      <p className="text-[11px] text-slate-400">Type a message below to start real-time coordination.</p>
-                    </div>
-                  ) : (
-                    messages.map((msg) => {
-                      const isMe = msg.sender_role === 'university';
-
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                        >
-                          <span className="text-[10px] text-slate-400 mb-1 px-1 font-medium">
-                            {msg.sender_name || (isMe ? 'University Team' : 'Industry Partner')} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
-                          </span>
-                          <div
-                            className={`max-w-[80%] sm:max-w-md p-3.5 rounded-2xl text-xs leading-relaxed shadow-2xs ${
-                              isMe
-                                ? 'bg-[#0b1329] text-white rounded-tr-none'
-                                : 'bg-white text-slate-800 border border-slate-200/90 rounded-tl-none'
-                            }`}
-                          >
-                            <p className="whitespace-pre-wrap">{msg.text}</p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Typing status */}
-                {partnerTyping && (
-                  <div className="px-4 py-1 text-[11px] text-teal-600 font-medium italic animate-pulse flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" />
-                    <span>{partnerTyping} is typing...</span>
-                  </div>
-                )}
-
-                {/* Message Input Bar */}
-                <form onSubmit={handleSendMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={handleInputChange}
-                    disabled={!isCollaborationActive}
-                    placeholder={isCollaborationActive ? "Type real-time message to industry partner..." : "Activate Collaboration MOU above to unlock chat..."}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:bg-white transition disabled:bg-slate-100 disabled:cursor-not-allowed"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!inputMessage.trim() || !isCollaborationActive}
-                    className="px-5 py-2.5 bg-[#0b1329] hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Send</span>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </button>
-                </form>
               </div>
             </div>
           </>
@@ -743,7 +765,7 @@ export default function UniversityCommunication() {
                   🤖
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold">Jharkhand State Academic R&amp;D &amp; Grant Copilot</h3>
+                  <h3 className="text-sm font-bold">JanSetu Academic R&amp;D &amp; Grant Copilot</h3>
                   <p className="text-xs text-teal-300">Trained on State R&amp;D Guidelines, CSR Matching Funds &amp; TRL Benchmarks</p>
                 </div>
               </div>
@@ -773,7 +795,7 @@ export default function UniversityCommunication() {
                             key={idx}
                             type="button"
                             onClick={() => handleSendAiPrompt(chip)}
-                            className="px-2.5 py-1 bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-400 text-teal-800 text-[11px] font-semibold rounded-lg transition shadow-2xs"
+                            className="px-2.5 py-1 bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-400 text-teal-800 text-[11px] font-semibold rounded-lg transition shadow-2xs cursor-pointer"
                           >
                             💡 {chip}
                           </button>
@@ -803,7 +825,7 @@ export default function UniversityCommunication() {
               <button
                 type="submit"
                 disabled={!aiInput.trim() || isAiThinking}
-                className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-50"
+                className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 Ask Copilot
               </button>
@@ -823,7 +845,7 @@ export default function UniversityCommunication() {
               </div>
               <button
                 onClick={() => setShowNewMsgModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 ✕
               </button>
@@ -835,16 +857,16 @@ export default function UniversityCommunication() {
                 <select
                   value={newRecipient}
                   onChange={(e) => setNewRecipient(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
                   required
                 >
-                  <option value="TechNova Systems">TechNova Systems (IoT Hardware Partner)</option>
-                  <option value="Tata Steel CSR Innovation Desk">Tata Steel CSR Innovation Desk</option>
-                  <option value="AgriTech Research Lab">AgriTech Research Lab</option>
-                  <option value="SunPower Solutions">SunPower Solutions</option>
-                  {livePartners.map(p => (
-                    <option key={p.id} value={p.company_name}>{p.company_name} ({p.sector || 'Industry'})</option>
-                  ))}
+                  {industryPartners.length === 0 ? (
+                    <option value="">No registered industry partners found</option>
+                  ) : (
+                    industryPartners.map(p => (
+                      <option key={p.id} value={p.name}>{p.id} · {p.name}</option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -853,13 +875,10 @@ export default function UniversityCommunication() {
                 <select
                   value={newProject}
                   onChange={(e) => setNewProject(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
                   required
                 >
-                  <option value="PRJ-315">PRJ-315 · Smart Waste Management</option>
-                  <option value="PRJ-925">PRJ-925 · Smart Irrigation Monitoring</option>
-                  <option value="PRJ-051">PRJ-051 · AI Crop Disease Detection</option>
-                  <option value="PRJ-038">PRJ-038 · Rural Solar Monitoring</option>
+                  <option value="General">General Coordination / Direct Chat</option>
                   {liveProjects.map(pr => (
                     <option key={pr.id} value={pr.id}>{pr.id} · {pr.title}</option>
                   ))}
@@ -872,7 +891,7 @@ export default function UniversityCommunication() {
                   rows="3"
                   value={newMsgContent}
                   onChange={(e) => setNewMsgContent(e.target.value)}
-                  placeholder="e.g. Hello team, we have completed testing for milestone 2..."
+                  placeholder="Type your message to start coordination..."
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
                   required
                 />
@@ -882,14 +901,14 @@ export default function UniversityCommunication() {
                 <button
                   type="button"
                   onClick={() => setShowNewMsgModal(false)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creatingConv}
-                  className="px-5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-xs font-semibold text-white shadow-xs disabled:opacity-50"
+                  className="px-5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-xs font-semibold text-white shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {creatingConv ? 'Opening Channel...' : 'Start Real-Time Chat'}
                 </button>

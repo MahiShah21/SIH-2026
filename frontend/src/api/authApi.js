@@ -19,6 +19,10 @@ export const authApi = {
 
   getDemoCredentials: async () => {
     return api.get('/auth/demo-credentials');
+  },
+
+  getUsers: async (params) => {
+    return api.get('/auth/users', { params });
   }
 };
 

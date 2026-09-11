@@ -20,7 +20,7 @@ export default function UniversityProposals() {
   const [formTech, setFormTech] = useState('');
   const [formMethodology, setFormMethodology] = useState('');
   const [formTeam, setFormTeam] = useState('Faculty Lead + Student Research Fellows');
-  const [formCost, setFormCost] = useState('₹5,00,000');
+  const [formCost, setFormCost] = useState('');
   const [formTimeline, setFormTimeline] = useState('6 months');
   const [formOutcome, setFormOutcome] = useState('');
   const [formIndustry, setFormIndustry] = useState('');
@@ -391,6 +391,7 @@ export default function UniversityProposals() {
                     type="text"
                     value={formCost}
                     onChange={(e) => setFormCost(e.target.value)}
+                    placeholder="e.g. ₹5,00,000 (Optional)"
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-800"
                   />
                 </div>

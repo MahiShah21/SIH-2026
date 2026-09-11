@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import UniversitySidebar from '../../components/common/UniversitySidebar';
 import UniversityHeader from '../../components/common/UniversityHeader';
 import projectApi from '../../api/projectApi';
+import { useAuth } from '../../context/AuthContext';
 
 export default function UniversityTeams() {
+  const { user: currentUser } = useAuth();
   const [teams, setTeams] = useState([]);
   const [availableProjects, setAvailableProjects] = useState([]);
   const [toastMsg, setToastMsg] = useState('');
@@ -14,7 +16,7 @@ export default function UniversityTeams() {
   // Form states for Create Team
   const [newTeamName, setNewTeamName] = useState('');
   const [newProject, setNewProject] = useState('');
-  const [newMentor, setNewMentor] = useState('Dr. A. K. Sharma (Computer Science & Engineering)');
+  const [newMentor, setNewMentor] = useState(currentUser?.name || 'Faculty Lead');
   const [newStudents, setNewStudents] = useState([
     { name: '', dept: 'CSE', role: 'Team Lead', skills: '' }
   ]);
@@ -389,16 +391,14 @@ export default function UniversityTeams() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Faculty Mentor</label>
-                <select
+                <input
+                  type="text"
                   value={newMentor}
                   onChange={(e) => setNewMentor(e.target.value)}
+                  placeholder="e.g. Dr. Ramesh Kumar (Principal Investigator)"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                >
-                  <option value="Dr. Sharma (Computer Science & Engg)">Dr. Sharma — Computer Science & Engineering</option>
-                  <option value="Dr. Verma (Electronics & Comm)">Dr. Verma — Electronics & Communication</option>
-                  <option value="Dr. Meena (Civil Hydrology)">Dr. Meena — Civil & Water Resources</option>
-                  <option value="Dr. Gupta (Biotechnology)">Dr. Gupta — Biotechnology & Agri</option>
-                </select>
+                  required
+                />
               </div>
 
               <div>
