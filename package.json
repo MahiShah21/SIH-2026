@@ -1,0 +1,21 @@
+{
+  "name": "jharinnovate-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "JharInnovate - Jharkhand GovTech & Academic-Industry Innovation Network",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "start:backend": "node backend/server.js",
+    "build": "npm --prefix frontend run build",
+    "seed": "node backend/db/initDb.js",
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:push": "npm --prefix backend run prisma:push",
+    "prisma:studio": "npm --prefix backend run prisma:studio",
+    "install:all": "npm install && npm --prefix frontend install && npm --prefix backend install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

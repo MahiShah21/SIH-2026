@@ -1,0 +1,324 @@
+// ==========================================================
+// JharInnovate Prisma Schema for Neon PostgreSQL
+// State Innovation & Civic Problem-Resolution Network
+// ==========================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Users Table (4 Personas: citizen, university, industry, admin)
+model User {
+  id                     String        @id @default(uuid())
+  email                  String        @unique
+  phone                  String?
+  passwordHash           String        @map("password_hash")
+  role                   String        // citizen, university, industry, admin
+  name                   String
+  title                  String?
+  organizationOrDistrict String?       @map("organization_or_district")
+  avatarUrl              String?       @map("avatar_url")
+  karmaPoints            Int           @default(0) @map("karma_points")
+  createdAt              DateTime      @default(now()) @map("created_at")
+  updatedAt              DateTime      @updatedAt @map("updated_at")
+
+  problems               Problem[]
+  projectTeams           ProjectTeam[]
+
+  @@map("users")
+}
+
+// 2. University Faculty & Researchers Profile Table
+model UniversityUser {
+  id             String    @id @default(uuid())
+  userId         String?   @unique @map("user_id")
+  name           String
+  email          String    @unique
+  institution    String    // BIT Mesra, IIT (ISM) Dhanbad, NIT Jamshedpur, etc.
+  department     String?
+  designation    String?   // Dean R&D, Principal Investigator, Faculty Lead, Research Fellow
+  phone          String?
+  specialization String?
+  avatarUrl      String?   @map("avatar_url")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("university_users")
+}
+
+// 3. Industry Partners & CSR Funders Table
+model IndustryUser {
+  id              String    @id @default(uuid())
+  userId          String?   @unique @map("user_id")
+  companyName     String    @map("company_name")
+  contactPerson   String    @map("contact_person")
+  email           String    @unique
+  phone           String?
+  sector          String?   // IoT & Hardware, AgriTech, Clean Energy, Water, Healthcare
+  location        String?
+  partnerType     String?   @map("partner_type") // CSR Funder, Technology Partner, Co-Developer
+  expertise       Json      @default("[]")
+  techStack       Json      @default("[]") @map("tech_stack")
+  supportTypes    Json      @default("[]") @map("support_types") // Funding, Hardware, Mentorship
+  grantPool       String?   @map("grant_pool")
+  committedAmount String?   @map("committed_amount")
+  mouStatus       String    @default("Active MOU") @map("mou_status")
+  about           String?   @db.Text
+  logoUrl         String?   @map("logo_url")
+  website         String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("industry_users")
+}
+
+// 4. Citizen Problems / Grievances Table
+model Problem {
+  id                 String      @id // e.g. JH-C1042
+  citizenId          String?     @map("citizen_id")
+  citizen            User?       @relation(fields: [citizenId], references: [id], onDelete: SetNull)
+  title              String
+  description        String      @db.Text
+  category           String
+  district           String
+  block              String?
+  village            String?
+  latitude           String?
+  longitude          String?
+  priority           String      @default("medium") // high, medium, low
+  status             String      @default("SUBMITTED") // SUBMITTED, AI_VERIFIED, EVALUATING, ACCEPTED, ASSIGNED, IN_PROGRESS, RESOLVED, REJECTED_FLAGGED
+  urgency            Boolean     @default(false)
+  
+  // AI Decision & Veracity Fields
+  isReal             Boolean     @default(true) @map("is_real")
+  veracityScore      Decimal     @default(85.00) @map("veracity_score") @db.Decimal(5, 2)
+  aiCategory         String?     @map("ai_category")
+  aiConfidence       Decimal     @default(90.00) @map("ai_confidence") @db.Decimal(5, 2)
+  aiRationale        String?     @map("ai_rationale") @db.Text
+  authenticityFlags  Json        @default("[]") @map("authenticity_flags")
+  
+  evidenceFiles      Json        @default("[]") @map("evidence_files")
+  upvotesCount       Int         @default(1) @map("upvotes_count")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  challenges         Challenge[]
+  feedbacks          Feedback[]
+
+  @@map("problems")
+  @@index([district])
+  @@index([category])
+  @@index([status])
+}
+
+// 5. Academic Grand Challenges Table (Derived / Matched from Grievances)
+model Challenge {
+  id                 String      @id // e.g. JH-1042
+  problemId          String?     @map("problem_id")
+  problem            Problem?    @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  title              String
+  domain             String
+  domainLabel        String?     @map("domain_label")
+  district           String
+  priority           String      @default("high")
+  priorityLabel      String?     @map("priority_label")
+  status             String      @default("EVALUATING")
+  populationImpact   String?     @map("population_impact")
+  focusArea          String?     @map("focus_area")
+  requiredSkills     Json        @default("[]") @map("required_skills")
+  aiMatchScore       String      @default("90%") @map("ai_match_score")
+  matchRationale     String?     @map("match_rationale") @db.Text
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  projects           Project[]
+  proposals          Proposal[]
+
+  @@map("challenges")
+  @@index([domain])
+}
+
+// 6. University Active R&D Projects Table
+model Project {
+  id                      String            @id // e.g. PRJ-315, PRJ-925, PRJ-051
+  title                   String
+  challengeId             String?           @map("challenge_id")
+  challenge               Challenge?        @relation(fields: [challengeId], references: [id], onDelete: SetNull)
+  leadInstitution         String            @map("lead_institution")
+  leadFaculty             String?           @map("lead_faculty")
+  leadMentorDept          String?           @map("lead_mentor_dept")
+  labLocation             String?           @map("lab_location")
+  department              String?
+  domain                  String?
+  location                String?
+  description             String?           @db.Text
+  status                  String            @default("IN_PROGRESS") // IN_PROGRESS, PROTOTYPE, TESTING, FIELD_PILOT, COMPLETED, ACCEPTED
+  statusLabel             String?           @map("status_label")
+  stage                   String            @default("Proposal") // Proposal, Feasibility, Prototype, Testing, Field Pilot, Implementation
+  nextStage               String?           @map("next_stage")
+  phase                   String?
+  progressPercent         Int               @default(0) @map("progress_percent")
+  totalBudget             String?           @map("total_budget") // e.g. "₹4,50,000"
+  disbursedAmount         String?           @map("disbursed_amount")
+  sanctionedGrant         String?           @map("sanctioned_grant")
+  industryPartner         String?           @map("industry_partner")
+  isAcceptedByUniversity  Boolean           @default(true) @map("is_accepted_by_university")
+  createdAt               DateTime          @default(now()) @map("created_at")
+  updatedAt               DateTime          @updatedAt @map("updated_at")
+
+  documents               ProjectDocument[]
+  teams                   ProjectTeam[]
+  proposals               Proposal[]
+  collaborations          Collaboration[]
+  feedbacks               Feedback[]
+
+  @@map("projects")
+  @@index([status])
+  @@index([isAcceptedByUniversity])
+}
+
+// 7. Project Documents Vault Table
+model ProjectDocument {
+  id         String   @id @default(uuid())
+  projectId  String   @map("project_id")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title      String
+  category   String   // Technical Documents, MoU & Legal, Testing Reports, Grant Documents, Approval
+  fileUrl    String   @map("file_url")
+  fileSize   String   @default("1.2 MB") @map("file_size")
+  format     String   @default("PDF")
+  status     String   @default("Verified")
+  uploadedBy String?  @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("project_documents")
+}
+
+// 8. Research Project Teams Table
+model ProjectTeam {
+  id         String   @id @default(uuid())
+  projectId  String   @map("project_id")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  memberName String   @map("member_name")
+  roleTitle  String   @map("role_title") // Principal Investigator, Co-Investigator, Research Fellow, M.Tech Scholar
+  department String?
+  email      String?
+  status     String?  // Faculty Lead, Faculty Mentor, Firmware Lead, App Developer
+  avatarUrl  String?  @map("avatar_url")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("project_teams")
+}
+
+// 9. Grant Proposals & State Grants Table
+model Proposal {
+  id                    String     @id @default(uuid())
+  challengeId           String?    @map("challenge_id")
+  challenge             Challenge? @relation(fields: [challengeId], references: [id], onDelete: SetNull)
+  projectId             String?    @map("project_id")
+  project               Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  universityName        String     @map("university_name")
+  title                 String
+  grantCode             String?    @map("grant_code")
+  sanctionedBy          String?    @map("sanctioned_by")
+  csrMatchPartner       String?    @map("csr_match_partner")
+  csrContribution       String?    @map("csr_contribution")
+  govtContribution      String?    @map("govt_contribution")
+  grantAmount           String?    @map("grant_amount")
+  utilizationPercentage Int        @default(0) @map("utilization_percentage")
+  durationMonths        Int        @default(12) @map("duration_months")
+  abstract              String?    @db.Text
+  status                String     @default("SANCTIONED")
+  tranches              Json       @default("[]")
+  submittedAt           DateTime   @default(now()) @map("submitted_at")
+
+  @@map("proposals")
+}
+
+// 10. Industry CSR & Tech Collaborations Table
+model Collaboration {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyName     String   @map("company_name")
+  partnerType     String   @map("partner_type")
+  status          String   @default("Active MOU") // PENDING, ACCEPTED, ACTIVE, REJECTED
+  committedAmount String?  @map("committed_amount")
+  details         String?  @db.Text
+  mouStatus       String   @default("Active MOU") @map("mou_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("collaborations")
+}
+
+// 11. Citizen Resolution Feedback & Impact Verification Table
+model Feedback {
+  id                   String    @id @default(uuid())
+  problemId            String?   @map("problem_id")
+  problem              Problem?  @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  projectId            String?   @map("project_id")
+  project              Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  citizenId            String?   @map("citizen_id")
+  solutionStatus       String?   @map("solution_status") // completely, partially, not-solved
+  rating               Int       @default(5)
+  notes                String?   @db.Text
+  beneficiariesReached Int       @default(250) @map("beneficiaries_reached")
+  attachments          Json      @default("[]")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@map("feedback")
+}
+
+// 12. Real-Time Chat Conversations Table
+model Conversation {
+  id                    String        @id @default(uuid())
+  projectId             String?       @map("project_id")
+  title                 String
+  participantUniversity String?       @map("participant_university")
+  participantIndustry   String?       @map("participant_industry")
+  lastMessage           String?       @map("last_message") @db.Text
+  lastMessageAt         DateTime      @default(now()) @map("last_message_at")
+  createdAt             DateTime      @default(now()) @map("created_at")
+
+  messages              ChatMessage[]
+
+  @@map("conversations")
+}
+
+// 13. Real-Time Chat Messages Table
+model ChatMessage {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderRole     String       @map("sender_role") // university, industry, admin
+  senderName     String       @map("sender_name")
+  recipientRole  String?      @map("recipient_role")
+  text           String       @db.Text
+  isRead         Boolean      @default(false) @map("is_read")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@map("chat_messages")
+}
+
+// 14. Real-Time Automatic Notifications Table
+model Notification {
+  id            String   @id @default(uuid())
+  recipientRole String   @map("recipient_role") // university, industry, citizen, admin
+  recipientId   String?  @map("recipient_id")
+  title         String
+  message       String   @db.Text
+  type          String   @default("COLLABORATION") // COLLABORATION, MESSAGE, GRANT, PROJECT, SYSTEM
+  referenceId   String?  @map("reference_id")
+  isRead        Boolean  @default(false) @map("is_read")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
+
