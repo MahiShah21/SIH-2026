@@ -9,7 +9,7 @@ import { seedUsers } from '../db/seedData.js';
  */
 export async function register(req, res, next) {
   try {
-    const { name, email, phone, password, role = 'citizen', title, organization_or_district } = req.body;
+    const { name, email, phone, password, role = 'citizen', title, organization_or_district, organizationOrDistrict } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -31,6 +31,7 @@ export async function register(req, res, next) {
 
     const validRoles = ['citizen', 'university', 'industry'];
     const userRole = validRoles.includes(reqRole) ? reqRole : 'citizen';
+    const orgDistrict = organization_or_district || organizationOrDistrict || 'Jharkhand';
 
     // 1. Check if user already exists
     let existingUser = null;
@@ -51,7 +52,7 @@ export async function register(req, res, next) {
     // 2. Hash password & prepare record
     const passwordHash = bcrypt.hashSync(password, 10);
     const userId = `usr_${userRole}_${Date.now()}`;
-    const avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+    const avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name.trim())}`;
 
     const newUser = {
       id: userId,
@@ -61,13 +62,13 @@ export async function register(req, res, next) {
       role: userRole,
       name: name.trim(),
       title: title || (userRole === 'citizen' ? 'Citizen Innovator' : userRole === 'university' ? 'Academic Researcher' : userRole === 'industry' ? 'CSR Partner' : 'GovTech Admin'),
-      organization_or_district: organization_or_district || 'Jharkhand',
+      organization_or_district: orgDistrict,
       avatar_url: avatarUrl,
       karma_points: 0,
       created_at: new Date().toISOString()
     };
 
-    // 3. Persist to Neon DB or Memory Store
+    // 3. Persist to Neon DB and sync to Memory Store
     try {
       await query(
         `INSERT INTO users (id, email, phone, password_hash, role, name, title, organization_or_district, avatar_url, karma_points, updated_at)
@@ -75,6 +76,14 @@ export async function register(req, res, next) {
         [newUser.id, newUser.email, newUser.phone, newUser.password_hash, newUser.role, newUser.name, newUser.title, newUser.organization_or_district, newUser.avatar_url, newUser.karma_points]
       );
     } catch (e) {
+      console.warn('DB insert user notice, using memory fallback:', e.message);
+    }
+    
+    // Always keep memoryStore in sync
+    const memIdx = memoryStore.users.findIndex(u => u.email.toLowerCase() === normalizedEmail);
+    if (memIdx !== -1) {
+      memoryStore.users[memIdx] = newUser;
+    } else {
       memoryStore.users.push(newUser);
     }
 

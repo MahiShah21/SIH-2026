@@ -8,13 +8,17 @@ import { getIO, broadcastNotification } from '../socket/socketHandler.js';
  */
 export async function getProblems(req, res, next) {
   try {
-    const { district, category, status } = req.query;
+    const { district, category, status, citizen_id } = req.query;
     let problems = [];
 
     try {
       let sql = 'SELECT * FROM problems WHERE 1=1';
       const params = [];
 
+      if (citizen_id && citizen_id !== 'all') {
+        params.push(citizen_id);
+        sql += ` AND citizen_id = $${params.length}`;
+      }
       if (district && district !== 'all') {
         params.push(district);
         sql += ` AND LOWER(district) = LOWER($${params.length})`;
@@ -33,6 +37,9 @@ export async function getProblems(req, res, next) {
       problems = result.rows;
     } catch (e) {
       problems = [...memoryStore.problems];
+      if (citizen_id && citizen_id !== 'all') {
+        problems = problems.filter(p => p.citizen_id === citizen_id);
+      }
       if (district && district !== 'all') {
         problems = problems.filter(p => p.district.toLowerCase() === district.toLowerCase());
       }
@@ -117,7 +124,7 @@ export async function createProblem(req, res, next) {
 
     const assignedCategory = inputCategory || aiAnalysis.classification.recommendedCategory;
     const newId = `JH-${Math.floor(1000 + Math.random() * 9000)}`;
-    const citizenId = req.user?.id || 'usr_citizen_01';
+    const citizenId = req.body.citizen_id || req.body.citizenId || req.user?.id || 'usr_citizen_01';
 
     const newProblem = {
       id: newId,
