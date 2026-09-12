@@ -99,3 +99,25 @@ export async function createIndustryPartner(req, res, next) {
     next(err);
   }
 }
+
+// 5. GET /api/industry/problems
+// Fetch all problems for the Industry dashboard (including university submitted and AI recommended)
+export async function getIndustryProblems(req, res, next) {
+  try {
+    let problems = [];
+    try {
+      const resDb = await query('SELECT * FROM problems ORDER BY created_at DESC');
+      problems = resDb.rows;
+    } catch (e) {
+      // Fallback to in-memory store if DB query fails
+      problems = [...memoryStore.problems];
+    }
+    return res.status(200).json({
+      success: true,
+      count: problems.length,
+      problems,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
