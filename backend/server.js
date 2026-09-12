@@ -32,17 +32,37 @@ const PORT = process.env.PORT || 5000;
 const httpServer = http.createServer(app);
 
 // CORS configuration
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:3000').split(',');
+const defaultOrigins = [
+  'https://sih-2026-iota-five.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173'
+];
+const envOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) 
+  : [];
+const allowedOrigins = Array.from(new Set([...envOrigins, ...defaultOrigins]));
+
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    if (!origin) return callback(null, true);
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed === '*') return true;
+      const cleanAllowed = allowed.replace(/\/+$/, '');
+      return cleanOrigin === cleanAllowed;
+    });
+    if (isAllowed) {
       callback(null, true);
     } else {
       callback(null, true); // Allow dev access gracefully
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

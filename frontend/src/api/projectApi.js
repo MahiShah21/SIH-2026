@@ -2,40 +2,41 @@ import api from './apiClient';
 
 export const projectApi = {
   getProjects: async (params = {}) => {
-    return api.get('/projects', { params });
+    return api.get('/api/projects', { params });
   },
 
   createProject: async (projectData) => {
-    return api.post('/projects', projectData);
+    return api.post('/api/projects', projectData);
   },
 
   getProjectById: async (id) => {
-    return api.get(`/projects/${id}`);
+    return api.get(`/api/projects/${id}`);
   },
 
   getChallenges: async () => {
-    return api.get('/projects/challenges');
+    return api.get('/api/projects/challenges');
   },
 
   updateLifecycle: async (projectId, lifecycleData) => {
-    return api.patch(`/projects/${projectId}/lifecycle`, lifecycleData);
+    return api.patch(`/api/projects/${projectId}/lifecycle`, lifecycleData);
   },
 
   updateBudget: async (projectId, budgetData) => {
-    return api.patch(`/projects/${projectId}/budget`, budgetData);
+    return api.patch(`/api/projects/${projectId}/budget`, budgetData);
   },
 
   addDocument: async (projectId, docData) => {
-    return api.post(`/projects/${projectId}/documents`, docData);
+    return api.post(`/api/projects/${projectId}/documents`, docData);
   },
 
   addTeamMember: async (projectId, memberData) => {
-    return api.post(`/projects/${projectId}/teams`, memberData);
+    return api.post(`/api/projects/${projectId}/teams`, memberData);
   },
 
   updateProposalGrant: async (projectId, proposalData) => {
-    return api.put(`/projects/${projectId}/proposals`, proposalData);
+    return api.put(`/api/projects/${projectId}/proposals`, proposalData);
   }
 };
 
 export default projectApi;
+

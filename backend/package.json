@@ -6,6 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
     "dev": "node --watch server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",

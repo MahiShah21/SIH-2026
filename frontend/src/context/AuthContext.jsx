@@ -114,9 +114,11 @@ export function AuthProvider({ children }) {
       if (response.success && response.token) {
         setToken(response.token);
         localStorage.setItem('jansetu_jwt_token', response.token);
+        localStorage.setItem('jhar_jwt_token', response.token);
         const role = response.user?.role || credentials.role || 'citizen';
         setCurrentRole(role);
         localStorage.setItem('jansetu_user_role', role);
+        localStorage.setItem('jhar_user_role', role);
         const roleDefault = USERS_BY_ROLE[role] || USERS_BY_ROLE.citizen;
         const freshUser = { ...roleDefault, ...response.user };
         setUserData(freshUser);
@@ -130,6 +132,7 @@ export function AuthProvider({ children }) {
     const role = credentials.role || 'citizen';
     setCurrentRole(role);
     localStorage.setItem('jansetu_user_role', role);
+    localStorage.setItem('jhar_user_role', role);
     const userFallback = {
       ...(USERS_BY_ROLE[role] || USERS_BY_ROLE.citizen),
       email: credentials.identifier || credentials.email || USERS_BY_ROLE[role]?.email,
@@ -146,8 +149,10 @@ export function AuthProvider({ children }) {
       if (response.success && response.token) {
         setToken(response.token);
         localStorage.setItem('jansetu_jwt_token', response.token);
+        localStorage.setItem('jhar_jwt_token', response.token);
         setCurrentRole(role);
         localStorage.setItem('jansetu_user_role', role);
+        localStorage.setItem('jhar_user_role', role);
         const roleDefault = USERS_BY_ROLE[role] || USERS_BY_ROLE.citizen;
         const freshUser = { ...roleDefault, ...response.user };
         setUserData(freshUser);
@@ -160,6 +165,7 @@ export function AuthProvider({ children }) {
     // Local fallback
     setCurrentRole(role);
     localStorage.setItem('jansetu_user_role', role);
+    localStorage.setItem('jhar_user_role', role);
     setUserData(USERS_BY_ROLE[role]);
     return USERS_BY_ROLE[role]?.homeRoute || '/';
   };
@@ -171,9 +177,11 @@ export function AuthProvider({ children }) {
       if (response.success && response.token) {
         setToken(response.token);
         localStorage.setItem('jansetu_jwt_token', response.token);
+        localStorage.setItem('jhar_jwt_token', response.token);
         const role = response.user?.role || registrationData.role || 'citizen';
         setCurrentRole(role);
         localStorage.setItem('jansetu_user_role', role);
+        localStorage.setItem('jhar_user_role', role);
         const baseRoleData = USERS_BY_ROLE[role] || USERS_BY_ROLE.citizen;
         const newCleanUser = {
           role: role,

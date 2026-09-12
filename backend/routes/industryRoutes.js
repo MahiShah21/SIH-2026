@@ -3,7 +3,9 @@ import { getIndustryPartners, createIndustryPartner, getIndustryProblems } from 
 
 const router = express.Router();
 
+router.get('/', getIndustryPartners);
 router.get('/problems', getIndustryProblems);
 router.post('/', createIndustryPartner);
 
 export default router;
+
